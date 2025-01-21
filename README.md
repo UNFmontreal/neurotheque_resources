@@ -1,1 +1,1 @@
-# neurotheque_preproc
+# neurotheque_pipeline
