@@ -1,1 +1,1 @@
-# neurotheque_pipeline
+# neuropipe
