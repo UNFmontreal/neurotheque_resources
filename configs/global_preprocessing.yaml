@@ -1,0 +1,41 @@
+# File: eeg_pipeline/configs/global_preprocessing.yml
+
+pipeline:
+  steps:
+    - name: LoadData
+      params:
+        file_path: "../data/pilot_data/sub-01_ses-001_raw.edf"
+
+    - name: PrepChannelsStep
+      params:
+        # You can override channel lists if needed
+        # non_eeg_channels: ["EEG X1:ECG-Pz", ...]
+
+    - name: FilterStep
+      params:
+        l_freq: 1
+        h_freq: 100
+        notch_freqs: [60, 120]
+
+    - name: AutoRejectStep
+      params:
+        # optional ar_params if needed
+        # ar_params:
+        #   consensus: 0.5
+        #   n_interpolate: 5
+        # etc.
+    
+    - name: ICAStep
+      params:
+        n_components: 0.95
+        random_state: 0
+        exclude: [1, 2, 3]   # example: user-detected bad comps
+
+    - name: SaveData
+      params:
+        output_path: "../data/pilot_data/sub-01_ses-001_raw_preprocessed.fif"
+        overwrite: true
+
+    - name: SplitTasksStep
+      params:
+        output_folder: "../data/pilot_data/"

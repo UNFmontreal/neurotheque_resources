@@ -1,0 +1,27 @@
+# File: eeg_pipeline/configs/gonogo_analysis.yml
+
+pipeline:
+  steps:
+    - name: LoadData
+      params:
+        file_path: "../data/pilot_data/GoNoGo.fif"
+
+    - name: FilterStep
+      params:
+        l_freq: 1
+        h_freq: 30
+
+    - name: GoNoGoTriggerStep
+      params:
+        stim_channel: "Trigger"
+
+    - name: GoNoGoEpochingStep
+      params:
+        tmin: -0.2
+        tmax: 0.8
+        baseline: [null, 0]
+
+    - name: SaveData
+      params:
+        output_path: "../data/pilot_data/GoNoGo_correct-epo.fif"
+        overwrite: true
