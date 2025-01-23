@@ -1,0 +1,48 @@
+# File: eeg_pipeline/configs/pilot_preprocessing_strategy.yml
+
+pipeline:
+  steps:
+    - name: LoadData
+      params:
+        file_path: "data/pilot_data/sub-01_ses-001_raw.edf"
+
+    - name: PrepChannelsStep
+      # no special params needed unless you want to override channel lists
+
+    - name: FilterStep
+      params:
+        l_freq: 1
+        h_freq: 100
+        notch_freqs: [60, 120]
+
+    - name: AutoRejectStep
+      # optionally pass 'ar_params' if you want
+      params:
+        ar_params:
+          consensus: 0.5
+          n_interpolate: 5
+          random_state: 42
+        mode: "fit_transform"
+        store_log: true
+
+    - name: ICAStep
+      params:
+        n_components: 0.95
+        random_state: 42
+        decim: 3
+        use_eog_detection: false
+        eog_ch_name: []
+        plot_components: true
+        plot_sources: false
+        interactive: true
+        exclude: []
+
+    - name: SaveData
+      params:
+        output_path: "data/pilot_data/sub-01_ses-001_raw_preprocessed.fif"
+        overwrite: true
+
+    - name: SplitTasksStep
+      params:
+        # Where to save each sub-task .fif
+        output_folder: "data/pilot_data/"
