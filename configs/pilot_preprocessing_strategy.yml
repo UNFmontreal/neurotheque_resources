@@ -4,7 +4,7 @@ pipeline:
   steps:
     - name: LoadData
       params:
-        file_path: "data/pilot_data/sub-01_ses-001_raw.edf"
+        file_path: "E:/Yann/neuropipe/data/pilot_data/sub-01_ses-001_raw.edf"
 
     - name: PrepChannelsStep
       # no special params needed unless you want to override channel lists
@@ -19,10 +19,10 @@ pipeline:
       # optionally pass 'ar_params' if you want
       params:
         ar_params:
-          consensus: 0.5
-          n_interpolate: 5
-          random_state: 42
-        mode: "fit_transform"
+          consensus: None
+          n_interpolate: None
+          random_state: None
+          thresh_method: 'bayesian_optimization'
         store_log: true
 
     - name: ICAStep

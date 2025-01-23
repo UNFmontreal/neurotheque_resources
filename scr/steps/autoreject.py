@@ -59,34 +59,36 @@ class AutoRejectStep(BaseStep):
 
         # 1) Unpack parameters
         ar_params = self.params.get("ar_params", {})
-        mode = self.params.get("mode", "fit")  # either "fit" or "fit_transform"
+        # mode = self.params.get("mode", "fit")  # either "fit" or "fit_transform"
         store_log = self.params.get("store_log", False)
 
         # 2) Create short ephemeral epochs for AutoReject
         #    Typically 1s windows are used for continuous artifact detection
         logging.info("[AutoRejectStep] Creating 1-second epochs for AR fitting.")
-        events_tmp = mne.make_fixed_length_events(data, duration=1.0)
+        events_tmp = mne.make_fixed_length_events(data, duration=1)
         epochs_tmp = mne.Epochs(
             data,
             events_tmp,
             tmin=0,
             tmax=1,
             baseline=None,
+            detrend=0,
             preload=True
         )
 
         # 3) Initialize and fit
         logging.info(f"[AutoRejectStep] Initializing AutoReject with params: {ar_params}")
-        ar = AutoReject(**ar_params)
+        # ar = AutoReject(**ar_params)
+        ar = AutoReject()
         logging.info("[AutoRejectStep] Fitting AutoReject on short epochs.")
         ar.fit(epochs_tmp)
 
-        # 4) Optional transform
-        if mode == "fit_transform":
-            logging.info("[AutoRejectStep] Applying transform on ephemeral epochs.")
-            epochs_tmp_clean = ar.transform(epochs_tmp)
-            # In principle, you could store these cleaned short epochs somewhere or
-            # merge them back into data, but typically this is just demonstration or QA.
+        # # 4) Optional transform
+        # if mode == "fit_transform":
+        #     logging.info("[AutoRejectStep] Applying transform on ephemeral epochs.")
+        #     epochs_tmp_clean = ar.transform(epochs_tmp)
+        #     # In principle, you could store these cleaned short epochs somewhere or
+        #     # merge them back into data, but typically this is just demonstration or QA.
 
         # 5) Optionally store the reject log in data.info
         if store_log:
