@@ -53,6 +53,8 @@ class Pipeline:
                         log_path=full_path.with_name(full_path.stem + "_rejectlog.pkl")
                         if log_path.exists():
                             with open(log_path, "rb") as f:
+                                if not hasattr(self.data.info, 'temp') or self.data.info['temp'] is None:
+                                    self.data.info['temp'] = {}
                                 self.data.info["temp"]["autoreject_log"] = pickle.load(f)
                                 
                         print(f"Resuming from checkpoint: {full_path}")

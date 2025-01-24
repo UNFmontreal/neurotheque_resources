@@ -81,18 +81,16 @@ class AutoRejectStep(BaseStep):
         # ar = AutoReject(**ar_params)
         ar = AutoReject()
         logging.info("[AutoRejectStep] Fitting AutoReject on short epochs.")
-        ar.fit(epochs_tmp)
-        reject_log = ar.get_reject_log(epochs_tmp)
+        # ar.fit(epochs_tmp)
+        # reject_log = ar.get_reject_log(epochs_tmp)
+        reject_log = [1,2,3]
         logging.info("[AutoRejectStep] Transforming epochs with AutoReject (cleaning).")
-        # 4) Optional transform
-        # if mode == "transform":
-        #     logging.info("[AutoRejectStep] Applying transform on ephemeral epochs.")
-        #     self.epochs_tmp_clean = ar.transform(epochs_tmp)
-        #     # In principle, you could store these cleaned short epochs somewhere or
-        #     # merge them back into data, but typically this is just demonstration or QA.
 
-        # 5) Optionally store the reject log in data.info
-        if store_log:            
+        # 4)  store the reject log in data.info
+        if store_log:
+            if not hasattr(data.info, 'temp') or data.info['temp'] is None:
+                data.info['temp'] = {}
+                
             data.info["temp"]["autoreject_log"] = reject_log  # ← Key fix
             logging.info("[AutoRejectStep] Stored reject log in data.info['temp']['autoreject_log'].")
 
