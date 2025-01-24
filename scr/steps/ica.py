@@ -74,12 +74,23 @@ class ICAStep(BaseStep):
         plot_srcs           = self.params.get("plot_sources", False)
         interactive         = self.params.get("interactive", False)
         exclude_list        = self.params.get("exclude", [])
+        
+        if "autoreject_log" not in data.info.get("temp", {}):
+            logging.info(f"[ICAStep] Fitting ICA (n_components={n_components}, decim={decim})...")
+            ica = ICA(n_components=n_components, random_state=random_state)
+            ica.fit(data, decim=decim)
+            logging.info("[ICAStep] ICA fit complete.")
+        else:
+            reject_log = data.info["temp"]["autoreject_log"]
+            events = mne.make_fixed_length_events(data, duration=1)
+            epochs = mne.Epochs(data, events, tmin=0, tmax=1,
+                           baseline=None, detrend=0, preload=True)
+            good_epochs = epochs[~reject_log.bad_epochs]
 
-        # 1) Fit ICA
-        logging.info(f"[ICAStep] Fitting ICA (n_components={n_components}, decim={decim})...")
-        ica = ICA(n_components=n_components, random_state=random_state)
-        ica.fit(data, decim=decim)
-        logging.info("[ICAStep] ICA fit complete.")
+            logging.info(f"[ICAStep] Fitting ICA (n_components={n_components}, decim={decim})...")
+            ica = ICA(n_components=n_components, random_state=random_state)
+            ica.fit(good_epochs, decim=decim)
+            logging.info("[ICAStep] ICA fit complete.")
 
         # 2) Optional EOG-based detection
         auto_suggested_comps = []

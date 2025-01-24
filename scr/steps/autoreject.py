@@ -49,7 +49,7 @@ class AutoRejectStep(BaseStep):
               consensus: 0.5
               n_interpolate: 5
               random_state: 42
-            mode: "fit_transform"
+            mode: "transform"
             store_log: true
     """
 
@@ -59,7 +59,7 @@ class AutoRejectStep(BaseStep):
 
         # 1) Unpack parameters
         ar_params = self.params.get("ar_params", {})
-        # mode = self.params.get("mode", "fit")  # either "fit" or "fit_transform"
+        # mode = self.params.get("mode", "transform")  # either "fit" or "fit_transform"
         store_log = self.params.get("store_log", False)
 
         # 2) Create short ephemeral epochs for AutoReject
@@ -82,19 +82,20 @@ class AutoRejectStep(BaseStep):
         ar = AutoReject()
         logging.info("[AutoRejectStep] Fitting AutoReject on short epochs.")
         ar.fit(epochs_tmp)
-
-        # # 4) Optional transform
-        # if mode == "fit_transform":
+        reject_log = ar.get_reject_log(epochs_tmp)
+        logging.info("[AutoRejectStep] Transforming epochs with AutoReject (cleaning).")
+        # 4) Optional transform
+        # if mode == "transform":
         #     logging.info("[AutoRejectStep] Applying transform on ephemeral epochs.")
-        #     epochs_tmp_clean = ar.transform(epochs_tmp)
+        #     self.epochs_tmp_clean = ar.transform(epochs_tmp)
         #     # In principle, you could store these cleaned short epochs somewhere or
         #     # merge them back into data, but typically this is just demonstration or QA.
 
         # 5) Optionally store the reject log in data.info
-        if store_log:
-            reject_log = ar.get_reject_log(epochs_tmp)
-            data.info["autoreject_log"] = reject_log
-            logging.info("[AutoRejectStep] Stored reject log in data.info['autoreject_log'].")
+        if store_log:            
+            data.info["temp"]["autoreject_log"] = reject_log  # ← Key fix
+            logging.info("[AutoRejectStep] Stored reject log in data.info['temp']['autoreject_log'].")
+
 
         logging.info("[AutoRejectStep] AutoReject finished. "
                      "Thresholds can be used in condition-specific epochs or QA steps.")

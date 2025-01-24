@@ -1,0 +1,38 @@
+neuropipe/
+    .gitignore
+    export_repo_structure.py (get_function_names, generate_repo_structure)
+    LICENSE
+    README.md
+    configs/
+        global_preprocessing.yaml
+        gonogo_analysis.yml
+        pilot_preprocessing_strategy.yml
+    data/
+        pilot_data/
+            sub-01_ses-001_raw.edf
+    scr/
+        pipeline.py (__init__, _load_config, run)
+        preprocessing/
+            global_and_task_preprocessing.py (run_global_and_task_preprocessing, run, _define_task_periods, minutes_to_samples)
+        steps/
+            autoreject.py (run)
+            base.py (__init__, run)
+            epoching.py (run)
+            epoching_gonogo.py (run)
+            filter.py (run)
+            ica.py (run)
+            load.py (run)
+            prepchannels.py (run)
+            reference.py (run)
+            save.py (run)
+            splittasks.py (_define_task_periods, run, minutes_to_samples)
+            triggers.py (run, _parse_gonogo, _parse_finger_tapping, _parse_mental_imagery)
+            triggers_gonogo.py (run)
+            __init__.py
+        strategies/
+            basic_cleaning.py (run_basic_cleaning)
+            finger_tapping_strategy.py (run_finger_tapping_pipeline)
+            gonogo_strategy.py (run_gonogo_pipeline)
+            mental_imagery_strategy.py (run_mental_imagery_pipeline)
+            pilot_preprocessing_strategy.ipynb
+    tests/

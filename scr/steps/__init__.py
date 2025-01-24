@@ -18,6 +18,7 @@ from .ica import ICAStep
 from .autoreject import AutoRejectStep
 from .save import SaveData
 from .reference import ReferenceStep
+from .save_checkpoint import SaveCheckpoint
 
 # If you have additional steps:
 from .prepchannels import PrepChannelsStep
@@ -39,6 +40,7 @@ STEP_REGISTRY.update({
     "FilterStep": FilterStep,
     "ICAStep": ICAStep,
     "AutoRejectStep": AutoRejectStep,
+    "SaveCheckpoint": SaveCheckpoint,
     "SaveData": SaveData,
     "PrepChannelsStep": PrepChannelsStep,
     "SplitTasksStep": SplitTasksStep,
