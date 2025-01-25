@@ -54,7 +54,7 @@ class ICAStep(BaseStep):
             method=params["method"],
             max_iter=params["max_iter"],
             fit_params=params["fit_params"],
-            random_state=42
+            random_state=0
         )
 
         # --------------------------
@@ -63,7 +63,7 @@ class ICAStep(BaseStep):
         if params["use_good_epochs_only"] and "autoreject_log" in data.info.get("temp", {}):
             logging.info("[ICAStep] Using only good epochs from AutoReject.")
             reject_log = data.info["temp"]["autoreject_log"]
-            events = mne.make_fixed_length_events(data, duration=1.0)
+            events = mne.make_fixed_length_events(data, duration=1)
             epochs = mne.Epochs(data, events, tmin=0, tmax=1, preload=True)
             good_mask = ~reject_log.bad_epochs
             good_epochs = epochs[good_mask] if len(good_mask) == len(epochs) else epochs
