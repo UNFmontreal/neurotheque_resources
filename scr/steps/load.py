@@ -18,7 +18,9 @@ class LoadData(BaseStep):
         - file_path (str): path to data file
         - stim_channel (str): e.g., 'Trigger'
         """
-        file_path = Path(self.params.get("file_path"))
+        related_path = Path(self.params.get("file_path"))
+        project_root=Path(__file__).resolve().parent.parent.parent
+        file_path=project_root / related_path
         stim_channel = self.params.get("stim_channel", "Trigger")
 
         if not file_path.exists():

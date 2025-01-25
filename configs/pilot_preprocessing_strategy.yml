@@ -31,7 +31,7 @@ pipeline:
     - name: ICAStep
       params:
         # Keep ~99% of variance
-        n_components: 0.99
+        n_components: 0.95
         method: 'infomax'
         max_iter: 2000
         fit_params:

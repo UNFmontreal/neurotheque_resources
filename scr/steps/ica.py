@@ -49,14 +49,18 @@ class ICAStep(BaseStep):
         # --------------------------
         # 2) Instantiate ICA
         # --------------------------
+        # ica = ICA(
+        #     n_components=params["n_components"],
+        #     method=params["method"],
+        #     max_iter=params["max_iter"],
+        #     fit_params=params["fit_params"],
+        #     random_state=0
+        # )
         ica = ICA(
             n_components=params["n_components"],
             method=params["method"],
-            max_iter=params["max_iter"],
-            fit_params=params["fit_params"],
             random_state=0
         )
-
         # --------------------------
         # 3) Select Data for ICA
         # --------------------------
@@ -64,7 +68,7 @@ class ICAStep(BaseStep):
             logging.info("[ICAStep] Using only good epochs from AutoReject.")
             reject_log = data.info["temp"]["autoreject_log"]
             events = mne.make_fixed_length_events(data, duration=1)
-            epochs = mne.Epochs(data, events, tmin=0, tmax=1, preload=True)
+            epochs = mne.Epochs(data, events, tmin=0, tmax=1, baseline=None,preload=True)
             good_mask = ~reject_log.bad_epochs
             good_epochs = epochs[good_mask] if len(good_mask) == len(epochs) else epochs
         else:
@@ -74,13 +78,17 @@ class ICAStep(BaseStep):
         # --------------------------
         # 4) Fit ICA
         # --------------------------
+        # ica.fit(
+        #     good_epochs,
+        #     decim=params["decim"],
+        #     reject=None,
+        #     tstep=4.0
+        # )
         ica.fit(
             good_epochs,
             decim=params["decim"],
             reject=None,
-            tstep=4.0
         )
-
         # --------------------------
         # 5) Automated Artifact Detection
         # --------------------------
