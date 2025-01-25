@@ -1,13 +1,12 @@
-# File: eeg_pipeline/configs/pilot_preprocessing_strategy.yml
+# File: neuropipe/configs/pilot_preprocessing_strategy.yml
 
 pipeline:
   steps:
     - name: LoadData
       params:
-        file_path: "D:/Yann/neuropipe/data/pilot_data/sub-01_ses-001_raw.edf"
+        file_path: "data/pilot_data/sub-01_ses-001_raw.edf"
 
     - name: PrepChannelsStep
-      # no special params needed unless you want to override channel lists
 
     - name: FilterStep
       params:
@@ -18,28 +17,45 @@ pipeline:
     - name: AutoRejectStep
       params:
         ar_params:
-          consensus: None
-          n_interpolate: None
-          random_state: None
+          consensus: null
+          n_interpolate: null
+          random_state: null
           thresh_method: 'bayesian_optimization'
         store_log: true
 
-    - name: SaveCheckpoint  
+    - name: SaveCheckpoint
       params:
         output_path: "data/pilot_data/sub-01_ses-001_after_autoreject.fif"
         overwrite: true
 
     - name: ICAStep
       params:
-        n_components: 0.95
-        random_state: 42
+        # Keep ~99% of variance
+        n_components: 0.99
+        method: 'infomax'
+        max_iter: 2000
+        fit_params:
+          extended: true
+          l_rate: 0.001
+        
         decim: 3
-        use_eog_detection: false
-        eog_ch_name: []
-        plot_components: true
-        plot_sources: false
+        use_good_epochs_only: true
+
+        # We do EOG detection on Fp1/Fp2, but won't automatically exclude
+        eog_ch_names: ['Fp1', 'Fp2']
+        eog_threshold: 0.5
+
+        # ECG is optional if we have a channel, otherwise it's disabled
+        ecg_channel: null
+        ecg_threshold: 0.3
+
+        # We won't auto-exclude anything. 
+        # Instead, we simply log suggestions & let the user decide.
+        exclude: []   # any components you already know to exclude
+        plot_dir: "reports/ica"
         interactive: true
-        exclude: []
+        plot_components: true
+        plot_sources: true
 
     - name: SaveData
       params:
@@ -48,5 +64,4 @@ pipeline:
 
     - name: SplitTasksStep
       params:
-        # Where to save each sub-task .fif
         output_folder: "data/pilot_data/"

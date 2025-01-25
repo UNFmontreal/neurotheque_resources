@@ -81,9 +81,9 @@ class AutoRejectStep(BaseStep):
         # ar = AutoReject(**ar_params)
         ar = AutoReject()
         logging.info("[AutoRejectStep] Fitting AutoReject on short epochs.")
-        # ar.fit(epochs_tmp)
-        # reject_log = ar.get_reject_log(epochs_tmp)
-        reject_log = [1,2,3]
+        ar.fit(epochs_tmp)
+        reject_log = ar.get_reject_log(epochs_tmp)
+        # reject_log = [1,2,3] #for debugging
         logging.info("[AutoRejectStep] Transforming epochs with AutoReject (cleaning).")
 
         # 4)  store the reject log in data.info
