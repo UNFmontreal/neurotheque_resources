@@ -3,29 +3,40 @@ neuropipe/
     export_repo_structure.py (get_function_names, generate_repo_structure)
     LICENSE
     README.md
+    repo_structure.txt
     configs/
         global_preprocessing.yaml
         gonogo_analysis.yml
         pilot_preprocessing_strategy.yml
     data/
         pilot_data/
+            sub-01_ses-001_after_autoreject.fif
+            sub-01_ses-001_after_autoreject_rejectlog.pkl
             sub-01_ses-001_raw.edf
+            sub-01_ses-001_raw_preprocessed.fif
+    reports/
+        ica/
     scr/
-        pipeline.py (__init__, _load_config, run)
+        pipeline.py (__init__, _get_project_root, _load_config, _resolve_checkpoints, run)
         preprocessing/
             global_and_task_preprocessing.py (run_global_and_task_preprocessing, run, _define_task_periods, minutes_to_samples)
+        reports/
+            ica/
+                ica_report.html
         steps/
             autoreject.py (run)
             base.py (__init__, run)
             epoching.py (run)
             epoching_gonogo.py (run)
             filter.py (run)
-            ica.py (run)
+            ica.py (run, _generate_report)
             load.py (run)
             prepchannels.py (run)
             reference.py (run)
             save.py (run)
+            save_checkpoint.py (run)
             splittasks.py (_define_task_periods, run, minutes_to_samples)
+            splittasks_dynamic.py (run, _find_task_segment)
             triggers.py (run, _parse_gonogo, _parse_finger_tapping, _parse_mental_imagery)
             triggers_gonogo.py (run)
             __init__.py
@@ -35,4 +46,14 @@ neuropipe/
             gonogo_strategy.py (run_gonogo_pipeline)
             mental_imagery_strategy.py (run_mental_imagery_pipeline)
             pilot_preprocessing_strategy.ipynb
+            report_ica.html
+            data/
+                pilot_data/
+                    GoNoGo.fif
+                    LandoitC.fif
+                    MentalImagery.fif
+                    Rest_GoNoGo.fif
+            reports/
+                ica/
+                    ica_report.html
     tests/
