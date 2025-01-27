@@ -38,7 +38,7 @@ class ICAStep(BaseStep):
             "eog_threshold": 0.5,
             "ecg_channel": None,
             "ecg_threshold": 0.3,
-            "plot_dir": "reports/ica",
+            "plot_dir": ".../reports/ica",
             "interactive": True,
             "exclude": [],              # Pre-exclusions
             "plot_components": True,
@@ -49,18 +49,18 @@ class ICAStep(BaseStep):
         # --------------------------
         # 2) Instantiate ICA
         # --------------------------
-        # ica = ICA(
-        #     n_components=params["n_components"],
-        #     method=params["method"],
-        #     max_iter=params["max_iter"],
-        #     fit_params=params["fit_params"],
-        #     random_state=0
-        # )
         ica = ICA(
             n_components=params["n_components"],
             method=params["method"],
+            max_iter=params["max_iter"],
+            fit_params=params["fit_params"],
             random_state=0
         )
+        # ica = ICA(
+        #     n_components=params["n_components"],
+        #     method=params["method"],
+        #     random_state=0
+        # )
         # --------------------------
         # 3) Select Data for ICA
         # --------------------------
@@ -211,23 +211,21 @@ class ICAStep(BaseStep):
 
     def _generate_report(self, ica, data, params):
         """Create an MNE Report summarizing ICA."""
+        from mne.report import Report
+        import matplotlib.pyplot as plt
+        
         out_path = Path(params["plot_dir"])
         out_path.mkdir(parents=True, exist_ok=True)
 
         report = Report(title="ICA Quality Report", verbose=False)
 
-        if params["plot_components"]:
-            fig_comp = ica.plot_components(inst=data, show=False)
-            report.add_figs_to_section(fig_comp, "ICA Components", section="ICA")
-
-        if params["plot_sources"]:
-            fig_sources = ica.plot_sources(inst=data, show=False)
-            report.add_figs_to_section(fig_sources, "ICA Sources", section="ICA")
-
-        if ica.exclude:
-            fig_overlay = ica.plot_overlay(data, exclude=ica.exclude, show=False)
-            report.add_figs_to_section(fig_overlay, "Artifact Removal Overlay", section="ICA")
-
+        report.add_ica(
+            ica=ica,
+            title="ICA cleaning",
+            picks=None,  # plot the excluded EOG components
+            inst=data,
+            n_jobs=None,  # could be increased!
+        )
         out_file = out_path / "ica_report.html"
         report.save(out_file, overwrite=True, open_browser=False)
         logging.info(f"[ICAStep] ICA report saved at {out_file}")

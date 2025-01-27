@@ -31,7 +31,7 @@ pipeline:
     - name: ICAStep
       params:
         # Keep ~99% of variance
-        n_components: 0.95
+        n_components: 0.99
         method: 'infomax'
         max_iter: 2000
         fit_params:
@@ -52,7 +52,7 @@ pipeline:
         # We won't auto-exclude anything. 
         # Instead, we simply log suggestions & let the user decide.
         exclude: []   # any components you already know to exclude
-        plot_dir: "reports/ica"
+        plot_dir: "../reports/ica"
         interactive: true
         plot_components: true
         plot_sources: true

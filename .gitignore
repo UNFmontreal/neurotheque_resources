@@ -2,4 +2,5 @@
 *.fif
 *.pkl
 *.edf
-
+.\amica
+.\amica_out
