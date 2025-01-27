@@ -64,4 +64,20 @@ pipeline:
 
     - name: SplitTasksStep
       params:
-        output_folder: "data/pilot_data/"
+        output_folder: "data/pilot_data/tasks"
+        tasks:
+          - name: "Rest_GoNoGo"
+            start_trigger: 6
+            end_trigger: 7
+          - name: "GoNoGo"
+            start_trigger: 7
+            end_trigger: 9
+          - name: "MentalImagery"
+            start_trigger: 8
+            end_trigger: 9
+            occurrence_index: 2  # second occurrence
+          - name: "LandoitC"
+            start_after_task: "GoNoGo"
+            start_offset_minutes: 14
+            end_before_trigger: 6
+            end_offset_minutes: 1
