@@ -18,6 +18,7 @@ neuropipe/
         ica/
     scr/
         pipeline.py (__init__, _get_project_root, _load_config, _resolve_checkpoints, run)
+        analysis/
         preprocessing/
             global_and_task_preprocessing.py (run_global_and_task_preprocessing, run, _define_task_periods, minutes_to_samples)
         reports/
@@ -29,6 +30,7 @@ neuropipe/
             epoching.py (run)
             epoching_gonogo.py (run)
             filter.py (run)
+            gonogo_analysis.py (run, _merge_go_nogo_events, _plot_roi_erps, _generate_report)
             ica.py (run, _generate_report)
             load.py (run)
             prepchannels.py (run)
@@ -43,6 +45,7 @@ neuropipe/
         strategies/
             basic_cleaning.py (run_basic_cleaning)
             finger_tapping_strategy.py (run_finger_tapping_pipeline)
+            GoNoGo_Analysis_Demo.ipynb
             gonogo_strategy.py (run_gonogo_pipeline)
             mental_imagery_strategy.py (run_mental_imagery_pipeline)
             pilot_preprocessing_strategy.ipynb

@@ -1,0 +1,18 @@
+# File: configs/gonogo_only.yaml
+
+pipeline:
+  steps:
+    - name: GoNoGoAnalysisStep
+      params:
+        fif_path: "data/pilot_data/GoNoGo.fif"
+        stim_channel: "Trigger"
+        filter_range: [1, 30]          # or null if you do NOT want to re-filter
+        output_dir: "reports/gonogo"
+        event_id:
+          Go: 1
+          NoGo: 2
+          Correct: 3
+          Incorrect: 4
+        rois:
+          Middle_ROI: ["Fz","Cz","F3","F4","C3","C4"]
+          Back_ROI: ["P3","P4","O1","O2"]
