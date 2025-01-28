@@ -1,10 +1,12 @@
-# File: neuropipe/configs/pilot_preprocessing_strategy.yml
-
 pipeline:
+  # <--- NEW: signals multi-subject logic in pipeline.py
+  multi_subject: true
+  
   steps:
     - name: LoadData
       params:
-        file_path: "data/pilot_data/sub-01_ses-001_raw.edf"
+        # <--- use a glob/wildcard pattern to match multiple sub/ses
+        file_path_pattern: "data/pilot_data/sub-*_ses-*_raw.edf"
 
     - name: PrepChannelsStep
 
@@ -25,45 +27,39 @@ pipeline:
 
     - name: SaveCheckpoint
       params:
-        output_path: "data/pilot_data/sub-01_ses-001_after_autoreject.fif"
+        # Will be dynamically rewritten to sub-X/ses-Y in pipeline.py
+        output_path: "data/pilot_data/after_autoreject.fif"
         overwrite: true
 
     - name: ICAStep
       params:
-        # Keep ~99% of variance
         n_components: 0.99
         method: 'infomax'
         max_iter: 2000
         fit_params:
           extended: true
           l_rate: 0.001
-        
         decim: 3
         use_good_epochs_only: true
-
-        # We do EOG detection on Fp1/Fp2, but won't automatically exclude
         eog_ch_names: ['Fp1', 'Fp2']
         eog_threshold: 0.5
-
-        # ECG is optional if we have a channel, otherwise it's disabled
         ecg_channel: null
         ecg_threshold: 0.3
-
-        # We won't auto-exclude anything. 
-        # Instead, we simply log suggestions & let the user decide.
-        exclude: []   # any components you already know to exclude
-        plot_dir: "../reports/ica"
+        exclude: []
+        plot_dir: "reports/ica"        # Will also be dynamically rewritten
         interactive: true
         plot_components: true
         plot_sources: true
 
     - name: SaveData
       params:
-        output_path: "data/pilot_data/sub-01_ses-001_raw_preprocessed.fif"
+        # Will be updated with sub-XX/ses-YY automatically
+        output_path: "data/pilot_data/raw_preprocessed.fif"
         overwrite: true
 
     - name: SplitTasksStep
       params:
+        # same approach if you want them in sub-XX/ses-YY
         output_folder: "data/pilot_data/tasks"
         tasks:
           - name: "Rest_GoNoGo"
@@ -75,7 +71,7 @@ pipeline:
           - name: "MentalImagery"
             start_trigger: 8
             end_trigger: 9
-            occurrence_index: 2  # second occurrence
+            occurrence_index: 2
           - name: "LandoitC"
             start_after_task: "GoNoGo"
             start_offset_minutes: 14
