@@ -1,5 +1,3 @@
-# src/steps/load.py
-
 import mne
 from pathlib import Path
 from .base import BaseStep
@@ -11,21 +9,34 @@ class LoadData(BaseStep):
 
     def run(self, data):
         """
-        Since this is a loader step, `data` is typically None coming in.
-        We return an mne.Raw object.
-
+        If multi-subject mode is active, pipeline sets self.params['input_file'] 
+        for each subject's file. Otherwise, we fallback to file_path (single-subject).
+        
         Expected params:
-        - file_path (str): path to data file
+        - input_file (str): actual path from pipeline (multi-subject) 
+        - file_path  (str): fallback for single-subject
         - stim_channel (str): e.g., 'Trigger'
         """
-        related_path = Path(self.params.get("file_path"))
-        project_root=Path(__file__).resolve().parent.parent.parent
-        file_path=project_root / related_path
-        stim_channel = self.params.get("stim_channel", "Trigger")
+        # 1) Resolve the final path to load
+        input_file = self.params.get("input_file", None)  # from pipeline in multi-subject
+        fallback = self.params.get("file_path", None)     # original single-subject usage
+
+        # We'll build an absolute path from either input_file or fallback
+        project_root = Path(__file__).resolve().parent.parent.parent
+
+        if input_file:
+            file_path = project_root / input_file
+        else:
+            if not fallback:
+                raise ValueError("[LoadData] No file specified in 'input_file' or 'file_path'.")
+            file_path = project_root / fallback
 
         if not file_path.exists():
             raise FileNotFoundError(f"Input file not found: {file_path}")
 
+        stim_channel = self.params.get("stim_channel", "Trigger")
+
+        # 2) Load based on file suffix
         if file_path.suffix == ".edf":
             raw = mne.io.read_raw_edf(file_path, preload=True, stim_channel=stim_channel)
         elif file_path.suffix == ".fif":
@@ -33,5 +44,5 @@ class LoadData(BaseStep):
         else:
             raise ValueError(f"Unsupported file format: {file_path.suffix}")
 
-        # Possibly do some initial channel naming or type setting here
+        # 3) Return the loaded Raw
         return raw
