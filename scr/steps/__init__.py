@@ -22,9 +22,9 @@ from .save_checkpoint import SaveCheckpoint
 
 # If you have additional steps:
 from .prepchannels import PrepChannelsStep
-from .splittasks import SplitTasksStep
+# from .splittasks import SplitTasksStep
 # etc...    
-
+from .splittasks_dynamic import SplitTasksStep
 # If you have specialized steps for analysis:
 try:
     from .triggers_gonogo import GoNoGoTriggerStep
