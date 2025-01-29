@@ -112,7 +112,7 @@ class Pipeline:
                 sub_id, ses_id = self._parse_sub_ses(file_path)
                 
                 #Look for an "after_autoreject" checkpoint for this subject
-                ckpt_path = self.paths.get_autoreject_checkpoint(sub_id, ses_id)
+                ckpt_path = self.paths.get_checkpoint_file(sub_id, ses_id,checkpoint_key="after_autoreject")
                 skip_index = None  # We'll find the index of "AutoRejectStep"
 
                 if ckpt_path.exists():
