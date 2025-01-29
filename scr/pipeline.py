@@ -124,6 +124,7 @@ class Pipeline:
 
                 # Reload steps each iteration
                 steps_def_copy = steps_def.copy()
+                steps_def_copy = self._rewrite_checkpoint_path(steps_def_copy, sub_id, ses_id)
                 remaining_steps = self._resolve_checkpoints(steps_def_copy)
 
                 # Reset data = None for each subject run
@@ -156,7 +157,20 @@ class Pipeline:
 
             print("[SUCCESS] Pipeline completed (multi-subject).")
             return None
-
+    def _rewrite_checkpoint_path(self, steps_def, sub_id, ses_id):
+        """
+        Rewrite the SaveCheckpoint step's output_path so if it exists, 
+        it points to sub-XX/ses-YY. This way, _resolve_checkpoints() 
+        will look for the correct subject-specific file.
+        """
+        for st in steps_def:
+            if st["name"] == "SaveCheckpoint":
+                # If a SaveCheckpoint step has an output_path, rewrite it
+                if "output_path" in st["params"]:
+                    st["params"]["output_path"] = self._adjust_output_path(
+                        st["params"]["output_path"], sub_id, ses_id
+                    )
+        return steps_def
     def _parse_sub_ses(self, file_path):
         """
         Extract sub-xx, ses-yy from a filename, e.g. 'sub-01_ses-001_raw.edf' -> ('01','001')
@@ -188,16 +202,7 @@ class Pipeline:
         """
         p = Path(original_path)
         new_path = p.parent / f"sub-{sub_id}" / f"ses-{ses_id}" / p.name
-        return str((self.project_root / new_path).resolve())
-    # def _adjust_output_path(self, path, sub_id, ses_id):
-    #     """
-    #     Adjust the output path to include subject and session information.
-    #     Ensure the directory exists before returning the path.
-    #     """
-    #     adjusted_path = path.format(subject_id=sub_id, session_id=ses_id)
-    #     directory = os.path.dirname(adjusted_path)
-        
-    #     if not os.path.exists(directory):
-    #         os.makedirs(directory)
-        
-    #     return adjusted_path
+        final_path = (self.project_root / new_path).resolve()
+        final_path.parent.mkdir(parents=True, exist_ok=True)
+
+        return str(final_path)
