@@ -1,44 +1,53 @@
 # File: src/steps/save.py
 
-import mne
 import logging
 from pathlib import Path
 from .base import BaseStep
-
+import pickle
 class SaveData(BaseStep):
     """
-    Step to save the current data (Raw or Epochs) to disk.
-    The pipeline rewrites the output_path to include subject/session 
-    if multi-subject mode is active, so no extra logic is needed here.
+    Step to save the data as an 'after_autoreject' checkpoint. 
+    That means next run can skip 'AutoRejectStep' if the file is found.
     
-    YAML params example:
-      - name: SaveData
-        params:
-          output_path: "data/pilot_data/raw_preprocessed.fif"
-          overwrite: true
+    Example YAML usage:
+    ------------------
+    - name: SaveCheckpoint
+      params:
+        checkpoint_key: "after_autoreject"  # or "post_ica", etc.
     """
 
     def run(self, data):
-        """
-        Expected params:
-         - output_path (str): path to save the .fif file (already adjusted for sub/ses by pipeline)
-         - overwrite (bool, default True): whether to overwrite existing file
-        """
+
         if data is None:
             raise ValueError("[SaveData] No data to save.")
 
-        output_path_str = self.params.get("output_path", "output.fif")
-        overwrite = self.params.get("overwrite", True)
+        
+        sub_id = self.params["subject_id"]
+        ses_id = self.params["session_id"]
+        paths = self.params["paths"]
+        
+        # We'll default to "after_autoreject" if not specified
 
-        output_path = Path(output_path_str)
-        output_path.parent.mkdir(parents=True, exist_ok=True)
+    # some fallback or raise an error  
+        
+        # If "after_autoreject", we typically do "paths.get_autoreject_checkpoint(...)"
+        # but you might have multiple keys => define more in ProjectPaths if needed
+        # if ckpt_key == "after_autoreject":
+        #     ckpt_path = paths.get_autoreject_checkpoint(sub_id, ses_id)
+        # elif ckpt_key == "after_ica":
+        #     ckpt_path = paths.get_ica_checkpoint(sub_id, ses_id)
+        # else:
+        
+        ckpt_path = paths.get_autoreject_checkpoint(sub_id, ses_id)
+        paths.ensure_parent(ckpt_path) 
+        data.save(str(ckpt_path), overwrite=True)   
+        
+        
+        # If there's an autoreject log, store it in a separate .pkl
+        if "temp" in data.info and "autoreject_log" in data.info["temp"]:
+            log_path = ckpt_path.with_name(ckpt_path.stem + "_rejectlog.pkl")
+            with open(log_path, "wb") as f:
+                pickle.dump(data.info["temp"]["autoreject_log"], f)
 
-        logging.info(f"[SaveData] Saving data => {output_path}")
-        if isinstance(data, mne.io.BaseRaw):
-            data.save(str(output_path), overwrite=overwrite)
-        elif isinstance(data, mne.Epochs):
-            data.save(str(output_path), overwrite=overwrite)
-        else:
-            raise TypeError("[SaveData] Only saving Raw or Epochs is currently supported.")
-
+        print(f"[SaveCheckpoint] Saved => {ckpt_path}")
         return data

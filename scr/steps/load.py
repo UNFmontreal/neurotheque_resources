@@ -4,45 +4,38 @@ from .base import BaseStep
 
 class LoadData(BaseStep):
     """
-    Step to load EEG data from a file. Supports EDF, FIF, etc.
+        Step to load EEG data from a file. 
+        If multi-subject, we rely on subject_id, session_id, 
+        but we might also just read input_file directly if it was set.
     """
 
     def run(self, data):
-        """
-        If multi-subject mode is active, pipeline sets self.params['input_file'] 
-        for each subject's file. Otherwise, we fallback to file_path (single-subject).
-        
-        Expected params:
-        - input_file (str): actual path from pipeline (multi-subject) 
-        - file_path  (str): fallback for single-subject
-        - stim_channel (str): e.g., 'Trigger'
-        """
-        # 1) Resolve the final path to load
-        input_file = self.params.get("input_file", None)  # from pipeline in multi-subject
-        fallback = self.params.get("file_path", None)     # original single-subject usage
 
-        # We'll build an absolute path from either input_file or fallback
-        project_root = Path(__file__).resolve().parent.parent.parent
+        sub_id = self.params.get("subject_id", None)
+        ses_id = self.params.get("session_id", None)
+        paths = self.params.get("paths", None)
 
-        if input_file:
-            file_path = project_root / input_file
-        else:
-            if not fallback:
-                raise ValueError("[LoadData] No file specified in 'input_file' or 'file_path'.")
-            file_path = project_root / fallback
+        file_path = self.params.get("input_file", None)
 
+        if not file_path:
+            # If we wanted to auto-generate the path from ProjectPaths:
+            if sub_id and ses_id and paths:
+                file_path = paths.get_raw_input_file(sub_id, ses_id)
+            else:
+                raise ValueError("[LoadData] No input_file or subject/session set.")
+
+        file_path = Path(file_path)
         if not file_path.exists():
-            raise FileNotFoundError(f"Input file not found: {file_path}")
+            raise FileNotFoundError(f"File not found: {file_path}")
 
         stim_channel = self.params.get("stim_channel", "Trigger")
 
-        # 2) Load based on file suffix
         if file_path.suffix == ".edf":
+            stim_channel = self.params.get("stim_channel", "Trigger")
             raw = mne.io.read_raw_edf(file_path, preload=True, stim_channel=stim_channel)
         elif file_path.suffix == ".fif":
             raw = mne.io.read_raw_fif(file_path, preload=True)
         else:
-            raise ValueError(f"Unsupported file format: {file_path.suffix}")
+            raise ValueError(f"Unsupported file extension: {file_path.suffix}")
 
-        # 3) Return the loaded Raw
         return raw

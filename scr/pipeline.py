@@ -6,7 +6,7 @@ import pickle
 import re
 from glob import glob
 from pathlib import Path
-
+from steps.project_paths import ProjectPaths
 # A global STEP_REGISTRY that maps "step name" -> "step class"
 STEP_REGISTRY = {}
 
@@ -25,12 +25,11 @@ class Pipeline:
         self.config_dict = config_dict
         self.data = None  # Holds mne.Raw or mne.Epochs throughout pipeline
         self.project_root = self._get_project_root()
+        self.paths=ProjectPaths(self.project_root)
 
     def _get_project_root(self):
         """Calculate project root based on this file's location."""
-        current_file = Path(__file__).resolve()
-        # e.g. pipeline.py is in src/, so project root might be parent of src
-        return current_file.parent.parent
+        return Path(__file__).resolve().parent.parent
 
     def _load_config(self):
         """Load YAML or dictionary config."""
@@ -80,7 +79,7 @@ class Pipeline:
         Main pipeline entry:
          1) Load config
          2) If multi_subject is False => single-subject approach
-         3) If multi_subject is True => discover all subject files, parse sub/ses, rewrite paths, run steps.
+         3) If multi_subject is True => discover all subject files, parse sub/ses, 
         """
         config = self._load_config()
         steps_def = config.get("pipeline", {}).get("steps", [])
@@ -101,76 +100,89 @@ class Pipeline:
         else:
             # === MULTI-SUBJECT MODE ===
             # 1) Find the pattern from "LoadData" step
-            file_pattern = None
-            for st in steps_def:
-                if st["name"] == "LoadData":
-                    file_pattern = st["params"].get("file_path_pattern", None)
-                    break
-            if not file_pattern:
-                raise ValueError("No 'file_path_pattern' found under LoadData step in multi_subject mode.")
-
+            file_pattern = self._get_file_pattern(steps_def)
             # 2) Glob for matching files
             all_files = sorted(glob(str(self.project_root / file_pattern)))
-            if not all_files:
-                print(f"[WARNING] No files found for pattern: {file_pattern}")
-                return None
-
             print(f"[INFO] Found {len(all_files)} file(s): {all_files}")
 
             # 3) Process each subject file
             for file_path in all_files:
                 print(f"\n=== Processing file: {file_path} ===")
                 sub_id, ses_id = self._parse_sub_ses(file_path)
+                
+                #Look for an "after_autoreject" checkpoint for this subject
+                ckpt_path = self.paths.get_autoreject_checkpoint(sub_id, ses_id)
+                skip_index = None  # We'll find the index of "AutoRejectStep"
 
-                # Reload steps each iteration
-                steps_def_copy = steps_def.copy()
-                steps_def_copy = self._rewrite_checkpoint_path(steps_def_copy, sub_id, ses_id)
-                remaining_steps = self._resolve_checkpoints(steps_def_copy)
+                if ckpt_path.exists():
+                    print(f"[INFO] Found existing checkpoint => {ckpt_path}")
+                    # Load it
+                    try:
+                        self.data = mne.io.read_raw_fif(ckpt_path, preload=True)
+                        # If there's an autoreject log
+                        log_path = ckpt_path.with_name(ckpt_path.stem + "_rejectlog.pkl")
+                        if log_path.exists():
+                            with open(log_path, "rb") as f:
+                                if not hasattr(self.data.info, 'temp') or self.data.info['temp'] is None:
+                                    self.data.info['temp'] = {}
+                                self.data.info["temp"]["autoreject_log"] = pickle.load(f)
+                        print("[INFO] Checkpoint loaded successfully.")
 
-                # Reset data = None for each subject run
-                self.data = None
+                        # 2) Skip all steps up to and including "AutoRejectStep"
+                        skip_index = self._find_step_index(steps_def, "AutoRejectStep")
+                        if skip_index is not None:
+                            print(f"[INFO] Will skip steps [0..{skip_index}] because checkpoint found.")
+                    except Exception as e:
+                        print(f"[ERROR] Could not load checkpoint: {e}")
+                        self.data = None
+                else:
+                    print("[INFO] No checkpoint found; starting from scratch.")
+                    self.data = None
 
-                for step_info in remaining_steps:
-                    step_info.setdefault("params", {})
-
-                    # Provide subject info
-                    step_info["params"]["subject_id"] = sub_id
-                    step_info["params"]["session_id"] = ses_id
-                    step_info["params"]["input_file"] = file_path
-
-                    # If a step has output_path or plot_dir, rewrite it
-                    if "output_path" in step_info["params"]:
-                        step_info["params"]["output_path"] = self._adjust_output_path(
-                            step_info["params"]["output_path"], sub_id, ses_id
-                        )
-                    if "plot_dir" in step_info["params"]:
-                        step_info["params"]["plot_dir"] = self._adjust_output_path(
-                            step_info["params"]["plot_dir"], sub_id, ses_id
-                        )
-                    if "output_folder" in step_info["params"]:
-                        step_info["params"]["output_folder"] = self._adjust_output_path(
-                            step_info["params"]["output_folder"], sub_id, ses_id
-                        )
-
-                    # Run the step
-                    self._run_step(step_info)
+                # 3) Actually run the steps for this subject, skipping if needed
+                self._run_steps(steps_def, skip_index, sub_id, ses_id, file_path)
 
             print("[SUCCESS] Pipeline completed (multi-subject).")
-            return None
-    def _rewrite_checkpoint_path(self, steps_def, sub_id, ses_id):
+            return None                
+
+
+    
+    def _run_steps(self, steps_def, skip_index=None, subject_id=None, session_id=None, file_path=None):
         """
-        Rewrite the SaveCheckpoint step's output_path so if it exists, 
-        it points to sub-XX/ses-YY. This way, _resolve_checkpoints() 
-        will look for the correct subject-specific file.
+        Runs the pipeline steps, optionally skipping steps up to skip_index inclusive.
+        If subject_id/session_id are provided, pass them to each step along with 'paths'.
         """
+        for i, step_info in enumerate(steps_def):
+            if skip_index is not None and i <= skip_index:
+                # skip the step
+                continue
+
+            step_info.setdefault("params", {})
+            # If we have subject context, pass it in
+            if subject_id and session_id:
+                step_info["params"]["subject_id"] = subject_id
+                step_info["params"]["session_id"] = session_id
+                step_info["params"]["paths"] = self.paths
+            # If we have a file_path for "LoadData"
+            if file_path:
+                step_info["params"]["input_file"] = file_path
+
+            self._run_step(step_info)
+
+    def _find_step_index(self, steps_def, step_name):
+        """
+        Returns the index of the named step if found, else None.
+        For example, to skip all steps <= index of "AutoRejectStep".
+        """
+        for i, st in enumerate(steps_def):
+            if st["name"] == step_name:
+                return i
+        return None
+    def _get_file_pattern(self, steps_def):
         for st in steps_def:
-            if st["name"] == "SaveCheckpoint":
-                # If a SaveCheckpoint step has an output_path, rewrite it
-                if "output_path" in st["params"]:
-                    st["params"]["output_path"] = self._adjust_output_path(
-                        st["params"]["output_path"], sub_id, ses_id
-                    )
-        return steps_def
+            if st["name"] == "LoadData":
+                return st["params"].get("file_path_pattern", None)
+        raise ValueError("No file_path_pattern found in LoadData step for multi-subject.")
     def _parse_sub_ses(self, file_path):
         """
         Extract sub-xx, ses-yy from a filename, e.g. 'sub-01_ses-001_raw.edf' -> ('01','001')
@@ -190,19 +202,7 @@ class Pipeline:
         if step_name not in STEP_REGISTRY:
             raise ValueError(f"Step '{step_name}' not registered.")
         step_class = STEP_REGISTRY[step_name]
-
         step = step_class(params)
         self.data = step.run(self.data)
 
-    def _adjust_output_path(self, original_path, sub_id, ses_id):
-        """
-        Insert sub-id / ses-id subdirectories to store subject-specific outputs.
-        e.g. "data/pilot_data/raw_preprocessed.fif" => 
-             "data/pilot_data/sub-01/ses-001/raw_preprocessed.fif"
-        """
-        p = Path(original_path)
-        new_path = p.parent / f"sub-{sub_id}" / f"ses-{ses_id}" / p.name
-        final_path = (self.project_root / new_path).resolve()
-        final_path.parent.mkdir(parents=True, exist_ok=True)
 
-        return str(final_path)

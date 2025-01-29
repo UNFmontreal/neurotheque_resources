@@ -55,15 +55,11 @@ class AutoRejectStep(BaseStep):
 
     def run(self, data):
         if data is None:
-            raise ValueError("[AutoRejectStep] No data available for AutoReject.")
+            raise ValueError("[AutoRejectStep] No data provided.")
 
-        # 1) Unpack parameters
         ar_params = self.params.get("ar_params", {})
-        # mode = self.params.get("mode", "transform")  # either "fit" or "fit_transform"
         store_log = self.params.get("store_log", False)
 
-        # 2) Create short ephemeral epochs for AutoReject
-        #    Typically 1s windows are used for continuous artifact detection
         logging.info("[AutoRejectStep] Creating 1-second epochs for AR fitting.")
         events_tmp = mne.make_fixed_length_events(data, duration=1)
         epochs_tmp = mne.Epochs(
@@ -76,10 +72,9 @@ class AutoRejectStep(BaseStep):
             preload=True
         )
 
-        # 3) Initialize and fit
         logging.info(f"[AutoRejectStep] Initializing AutoReject with params: {ar_params}")
-        # ar = AutoReject(**ar_params)
-        ar = AutoReject()
+        ar = AutoReject(**ar_params)
+        # ar = AutoReject()
         logging.info("[AutoRejectStep] Fitting AutoReject on short epochs.")
         ar.fit(epochs_tmp)
         reject_log = ar.get_reject_log(epochs_tmp)
@@ -90,11 +85,8 @@ class AutoRejectStep(BaseStep):
         if store_log:
             if not hasattr(data.info, 'temp') or data.info['temp'] is None:
                 data.info['temp'] = {}
-                
             data.info["temp"]["autoreject_log"] = reject_log  # ← Key fix
-            logging.info("[AutoRejectStep] Stored reject log in data.info['temp']['autoreject_log'].")
-
 
         logging.info("[AutoRejectStep] AutoReject finished. "
-                     "Thresholds can be used in condition-specific epochs or QA steps.")
+                     "Thresholds stored in data.info['temp']['autoreject_log']")
         return data

@@ -5,7 +5,6 @@ pipeline:
   steps:
     - name: LoadData
       params:
-        # <--- use a glob/wildcard pattern to match multiple sub/ses
         file_path_pattern: "data/pilot_data/sub-*_ses-*_raw.edf"
 
     - name: PrepChannelsStep
