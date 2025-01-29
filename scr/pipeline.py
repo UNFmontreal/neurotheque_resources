@@ -6,10 +6,11 @@ import pickle
 import re
 from glob import glob
 from pathlib import Path
-from steps.project_paths import ProjectPaths
+from scr.steps.project_paths import ProjectPaths
 # A global STEP_REGISTRY that maps "step name" -> "step class"
-STEP_REGISTRY = {}
-
+from scr.registery import STEP_REGISTRY
+import logging
+logging.basicConfig(level=logging.INFO)
 class Pipeline:
     """
     A pipeline that executes a list of steps in order.

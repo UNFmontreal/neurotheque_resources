@@ -7,6 +7,7 @@ neuropipe/
     configs/
         global_preprocessing.yaml
         gonogo_analysis.yml
+        gonogo_only.yaml
         pilot_preprocessing_strategy.yml
     data/
         pilot_data/
@@ -14,14 +15,23 @@ neuropipe/
             sub-01_ses-001_after_autoreject_rejectlog.pkl
             sub-01_ses-001_raw.edf
             sub-01_ses-001_raw_preprocessed.fif
+            sub-01/
+                ses-001/
     reports/
+        gonogo/
+            gonogo_analysis_report.html
+            roi_erps_go_vs_nogo.png
         ica/
+        sub-01/
+            ses-001/
+                ica/
     scr/
-        pipeline.py (__init__, _get_project_root, _load_config, _resolve_checkpoints, run)
+        pipeline.py (__init__, _get_project_root, _load_config, _resolve_checkpoints, run, _run_steps, _find_step_index, _get_file_pattern, _parse_sub_ses, _run_step)
         analysis/
         preprocessing/
             global_and_task_preprocessing.py (run_global_and_task_preprocessing, run, _define_task_periods, minutes_to_samples)
         reports/
+            gonogo_demo/
             ica/
                 ica_report.html
         steps/
@@ -30,10 +40,12 @@ neuropipe/
             epoching.py (run)
             epoching_gonogo.py (run)
             filter.py (run)
-            gonogo_analysis.py (run, _merge_go_nogo_events, _plot_roi_erps, _generate_report)
+            gonogo_analysis.py (__init__, _load_config, run, _merge_go_nogo_events, _plot_raw_trigger_channel, _plot_average_erp_condition, _plot_roi_erps_side_by_side, _plot_compare_evokeds_rois, _plot_combined_rois, _style_lines, _generate_report)
+            gonogo_analysis_v2.py (__init__, _load_config, run, _get_subject_files, _parse_filename, _should_process, _process_single_file, _load_and_filter, _find_and_merge_events, _merge_events, _create_epochs, _roi_analysis, _time_frequency_analysis, _detect_n2_p3_amplitudes, _generate_subject_report, _perform_group_analysis, _generate_group_report, _plot_raw_trigger_channel, _plot_roi_erps_side_by_side, _plot_compare_evokeds_rois, _plot_combined_rois, _style_lines)
             ica.py (run, _generate_report)
             load.py (run)
             prepchannels.py (run)
+            project_paths.py (__init__, get_raw_input_file, get_checkpoint_file, get_autoreject_folders, get_ica_folder, ensure_parent)
             reference.py (run)
             save.py (run)
             save_checkpoint.py (run)
@@ -43,19 +55,19 @@ neuropipe/
             triggers_gonogo.py (run)
             __init__.py
         strategies/
-            basic_cleaning.py (run_basic_cleaning)
             finger_tapping_strategy.py (run_finger_tapping_pipeline)
             GoNoGo_Analysis_Demo.ipynb
-            gonogo_strategy.py (run_gonogo_pipeline)
             mental_imagery_strategy.py (run_mental_imagery_pipeline)
             pilot_preprocessing_strategy.ipynb
-            report_ica.html
             data/
                 pilot_data/
                     GoNoGo.fif
                     LandoitC.fif
                     MentalImagery.fif
                     Rest_GoNoGo.fif
+                    sub-01/
+                        ses-001/
+                            after_autoreject.fif/
             reports/
                 ica/
                     ica_report.html

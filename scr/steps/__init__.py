@@ -8,7 +8,7 @@ that the pipeline can reference them by name without extra imports.
 
 import logging
 
-from ..pipeline import STEP_REGISTRY
+from scr.registery import STEP_REGISTRY
 
 # Import each step class:
 from .base import BaseStep
