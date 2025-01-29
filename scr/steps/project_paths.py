@@ -31,7 +31,10 @@ class ProjectPaths:
             / f"sub-{subject_id}" / f"ses-{session_id}"
             / f"{checkpoint_key}-raw.fif"
         )
-
+    def get_autoreject_folders(self, subject_id,session_id):
+     
+        return self.base_dir / "reports" / "autoreject" /f"sub_{subject_id}"/ f"ses-{session_id}"
+    
     def get_ica_folder(self, subject_id, session_id):
         """
         Where we might store ICA plots or QA.

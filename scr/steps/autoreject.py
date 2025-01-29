@@ -79,8 +79,11 @@ class AutoRejectStep(BaseStep):
         ar.fit(epochs_tmp)
         reject_log = ar.get_reject_log(epochs_tmp)
         # reject_log = [1,2,3] #for debugging
-        logging.info("[AutoRejectStep] Transforming epochs with AutoReject (cleaning).")
-
+        logging.info("[AutoRejectStep] AutoReject thresholds:")
+        fig=reject_log.plot("horizontal",show=False)
+        fig_path=self.path.get_autoreject_folders()
+        fig_path.ensure_parent()
+        fig.savefig(fig_path / "autoreject_thresholds.png")
         # 4)  store the reject log in data.info
         if store_log:
             if not hasattr(data.info, 'temp') or data.info['temp'] is None:
