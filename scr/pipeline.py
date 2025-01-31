@@ -18,32 +18,22 @@ class Pipeline:
     Supports single-subject (original) or multi-subject (new) mode.
     """
 
-    def __init__(self, config_file=None, config_dict=None):
-        """
-        You can either pass a YAML file path or a dict directly.
-        """
-        self.config_file = config_file
-        self.config_dict = config_dict
-        self.data = None  # Holds mne.Raw or mne.Epochs throughout pipeline
-        self.project_root = self._get_project_root()
-        self.paths=ProjectPaths(self.project_root)
+    def __init__(self, config_file="config/pipeline_config.yaml", config_dict=None):  
+        self.config = self._load_config(config_file, config_dict)
+        self.paths = ProjectPaths(self.config)
+        
+        # Set default subject/session from config
+        self.default_subject = self.config["default_subject"]
+        self.default_session = self.config["default_session"]
+        
 
-    def _get_project_root(self):
-        """Calculate project root based on this file's location."""
-        return Path(__file__).resolve().parent.parent
-
-    def _load_config(self):
-        """Load YAML or dictionary config."""
-        if self.config_dict is not None:
-            return self.config_dict
-        elif self.config_file:
-            path = Path(self.config_file)
-            if not path.exists():
-                raise FileNotFoundError(f"Config file not found: {path}")
-            with open(path, 'r') as f:
-                return yaml.safe_load(f)
-        else:
-            raise ValueError("No config file or dict provided.")
+    def _load_config(self, config_file, config_dict):
+        if config_dict:
+            return config_dict
+            
+        with open(config_file) as f:
+            config = yaml.safe_load(f)
+        return config
 
     def _resolve_checkpoints(self, steps_def):
         """
@@ -55,8 +45,8 @@ class Pipeline:
         """
         for i, step in reversed(list(enumerate(steps_def))):
             if step["name"] == "SaveCheckpoint":
-                output_path = Path(step["params"]["output_path"])
-                full_path = (self.project_root / output_path).resolve()
+                output_path = self.paths.get_derivative_path(stage="after_autoreject")
+                full_path = output_path.resolve()
                 
                 if full_path.exists():
                     try:
@@ -82,7 +72,7 @@ class Pipeline:
          2) If multi_subject is False => single-subject approach
          3) If multi_subject is True => discover all subject files, parse sub/ses, 
         """
-        config = self._load_config()
+        config=self.config
         steps_def = config.get("pipeline", {}).get("steps", [])
         if not steps_def:
             raise ValueError("No steps defined under pipeline.steps in config.")
@@ -103,7 +93,7 @@ class Pipeline:
             # 1) Find the pattern from "LoadData" step
             file_pattern = self._get_file_pattern(steps_def)
             # 2) Glob for matching files
-            all_files = sorted(glob(str(self.project_root / file_pattern)))
+            all_files = sorted(glob(str(self.paths.raw_data_dir/ file_pattern)))
             print(f"[INFO] Found {len(all_files)} file(s): {all_files}")
 
             # 3) Process each subject file
@@ -112,7 +102,7 @@ class Pipeline:
                 sub_id, ses_id = self._parse_sub_ses(file_path)
                 
                 #Look for an "after_autoreject" checkpoint for this subject
-                ckpt_path = self.paths.get_checkpoint_file(sub_id, ses_id,checkpoint_key="after_autoreject")
+                ckpt_path = self.paths.get_checkpoint_path(sub_id, ses_id,checkpoint_name="after_autoreject")
                 skip_index = None  # We'll find the index of "AutoRejectStep"
 
                 if ckpt_path.exists():

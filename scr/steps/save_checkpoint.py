@@ -6,17 +6,14 @@ import pickle
 
 class SaveCheckpoint(BaseStep):
     def run(self, data):
-        output_path = Path(self.params["output_path"])
-        project_root = Path(__file__).resolve().parent.parent.parent
+        sub_id = self.params["subject_id"]
+        ses_id = self.params["session_id"]
+        checkpoint_name = self.params.get("checkpoint_key", "after_autoreject")
         
-        # Save Raw data
-        raw_path = project_root / output_path
-        data.save(raw_path, overwrite=True)
+        ckpt_path = self.params["paths"].get_checkpoint_path(
+            subject_id=sub_id,
+            session_id=ses_id,
+            checkpoint_name=checkpoint_name
+        )
         
-        # Save reject_log separately if it exists
-        if "autoreject_log" in data.info.get("temp", {}):
-            log_path = raw_path.with_name(raw_path.stem + "_rejectlog.pkl")
-            with open(log_path, "wb") as f:
-                pickle.dump(data.info["temp"]["autoreject_log"], f)
-        
-        return data
+        data.save(ckpt_path, overwrite=True)

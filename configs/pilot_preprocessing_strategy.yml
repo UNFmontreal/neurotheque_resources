@@ -1,11 +1,20 @@
+directory:
+  root: "E:/Yann/neuropipe/"
+  raw_data_dir: "data/raw"
+  processed_dir: "data/processed"
+  reports_dir: "reports"
+  derivatives_dir: "derivatives"
+
+default_subject: "sub-01" 
+default_session: "ses-001"
+
 pipeline:
-  # <--- NEW: signals multi-subject logic in pipeline.py
   multi_subject: true
   
   steps:
     - name: LoadData
       params:
-        file_path_pattern: "data/pilot_data/sub-*_ses-*_raw.edf"
+        file_path_pattern: "sub-*_ses-*_raw.edf"
 
     - name: PrepChannelsStep
 

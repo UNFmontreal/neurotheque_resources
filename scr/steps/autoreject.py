@@ -4,7 +4,8 @@ import logging
 import mne
 from autoreject import AutoReject
 from .base import BaseStep
-
+import json
+import os
 class AutoRejectStep(BaseStep):
     """
     A professional AutoReject step for EEG pipelines.
@@ -76,20 +77,23 @@ class AutoRejectStep(BaseStep):
         ar = AutoReject(**ar_params)
         # ar = AutoReject()
         logging.info("[AutoRejectStep] Fitting AutoReject on short epochs.")
-        ar.fit(epochs_tmp)
-        reject_log = ar.get_reject_log(epochs_tmp)
-        # reject_log = [1,2,3] #for debugging
+        # ar.fit(epochs_tmp)
+        # reject_log = ar.get_reject_log(epochs_tmp)
+        reject_log = [1,2,3] #for debugging
         logging.info("[AutoRejectStep] AutoReject thresholds:")
-        fig=reject_log.plot("horizontal",show=False)
-        fig_path=self.path.get_autoreject_folders()
-        fig_path.ensure_parent()
-        fig.savefig(fig_path / "autoreject_thresholds.png")
+        
+        sub_id = self.params.get("subject_id", "unknown")
+        ses_id = self.params.get("session_id", "001")
+        paths = self.params.get("paths", None)
+        # fig=reject_log.plot("horizontal",show=False)
+        fig_dir = paths.get_autoreject_report_dir(sub_id, ses_id)
+        # fig.savefig(fig_path / "autoreject_thresholds.png")
         # 4)  store the reject log in data.info
         if store_log:
-            if not hasattr(data.info, 'temp') or data.info['temp'] is None:
-                data.info['temp'] = {}
-            data.info["temp"]["autoreject_log"] = reject_log  # ← Key fix
-
-        logging.info("[AutoRejectStep] AutoReject finished. "
-                     "Thresholds stored in data.info['temp']['autoreject_log']")
+            log_dir = paths.get_auto_reject_log_path(sub_id, ses_id)
+            log_file=os.path.join(log_dir,"autoreject_log.json")
+            with open(log_file, 'w') as f:
+                json.dump(reject_log, f,indent=4)
+                logging.info("[AutoRejectStep] AutoReject log saved to {log_path}")
+        logging.info("[AutoRejectStep] AutoReject finished.")
         return data

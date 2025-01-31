@@ -22,7 +22,7 @@ class PrepChannelsStep(BaseStep):
         data.drop_channels(existing_non_eeg)
         logging.info(f"Dropped non-EEG: {existing_non_eeg}")
 
-        # 2) Rename EEG channels
+        # 2) Rename EEG channels 
         eeg_channels = [ch for ch in data.info['ch_names'] if 'EEG ' in ch]
         rename_mapping = {ch: ch.replace('EEG ', '').replace('-Pz', '') for ch in eeg_channels}
         data.rename_channels(rename_mapping)

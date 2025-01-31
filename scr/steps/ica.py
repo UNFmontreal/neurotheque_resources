@@ -6,7 +6,8 @@ from mne.preprocessing import ICA
 from mne.report import Report
 from pathlib import Path
 from .base import BaseStep
-
+import json
+import os
 class ICAStep(BaseStep):
     """
     ICA step that logs suggested bad components (EOG/ECG) but does not 
@@ -17,7 +18,6 @@ class ICAStep(BaseStep):
       - Chaumon et al. (2015), J Neurosci Methods
       - Winkler et al. (2015), NeuroImage
       - DSI-24 Technical Specs
-      - ADJUST, MARA, etc. for advanced automated IC classification
     """
 
     def run(self, data):
@@ -45,7 +45,9 @@ class ICAStep(BaseStep):
             "plot_sources": True,
         }
         params = {**default_params, **self.params}
-
+        sub_id = params.get("subject_id", "unknown")
+        ses_id = params.get("session_id", "001")
+        paths = params.get("paths", None)
         # --------------------------
         # 2) Instantiate ICA
         # --------------------------
@@ -64,12 +66,21 @@ class ICAStep(BaseStep):
         # --------------------------
         # 3) Select Data for ICA
         # --------------------------
-        if params["use_good_epochs_only"] and "autoreject_log" in data.info.get("temp", {}):
+        if params["use_good_epochs_only"]:
             logging.info("[ICAStep] Using only good epochs from AutoReject.")
-            reject_log = data.info["temp"]["autoreject_log"]
+            autoreject_log = None
+
+            log_dir = paths.get_auto_reject_log_path(sub_id, ses_id)
+            log_file = os.path.join(log_dir, "autoreject_log.json")
+
+            if os.path.exists(log_file):
+                with open(log_file,'r') as f:
+                    autoreject_log = json.load(f)
+                    logging.info("[ICAStep] AutoReject log loaded.")
+                    
             events = mne.make_fixed_length_events(data, duration=1)
             epochs = mne.Epochs(data, events, tmin=0, tmax=1, baseline=None,preload=True)
-            good_mask = ~reject_log.bad_epochs
+            good_mask = ~autoreject_log.bad_epochs
             good_epochs = epochs[good_mask] if len(good_mask) == len(epochs) else epochs
         else:
             logging.info("[ICAStep] No (or unused) AutoReject log; using all data for ICA.")
