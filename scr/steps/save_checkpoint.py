@@ -3,6 +3,7 @@ import mne
 from pathlib import Path
 from .base import BaseStep
 import pickle
+import os
 
 class SaveCheckpoint(BaseStep):
     def run(self, data):
@@ -15,5 +16,5 @@ class SaveCheckpoint(BaseStep):
             session_id=ses_id,
             checkpoint_name=checkpoint_name
         )
-        
+        ckpt_path = os.path.join(ckpt_path, f"sub-{sub_id}_ses-{ses_id}_desc-{checkpoint_name}_eeg.fif")
         data.save(ckpt_path, overwrite=True)

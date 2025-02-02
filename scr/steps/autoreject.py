@@ -6,6 +6,7 @@ from autoreject import AutoReject
 from .base import BaseStep
 import json
 import os
+import pickle
 class AutoRejectStep(BaseStep):
     """
     A professional AutoReject step for EEG pipelines.
@@ -77,23 +78,23 @@ class AutoRejectStep(BaseStep):
         ar = AutoReject(**ar_params)
         # ar = AutoReject()
         logging.info("[AutoRejectStep] Fitting AutoReject on short epochs.")
-        # ar.fit(epochs_tmp)
-        # reject_log = ar.get_reject_log(epochs_tmp)
-        reject_log = [1,2,3] #for debugging
+        ar.fit(epochs_tmp)
+        reject_log = ar.get_reject_log(epochs_tmp)
+        # reject_log = [1,2,3] #for debugging
         logging.info("[AutoRejectStep] AutoReject thresholds:")
         
         sub_id = self.params.get("subject_id", "unknown")
         ses_id = self.params.get("session_id", "001")
         paths = self.params.get("paths", None)
-        # fig=reject_log.plot("horizontal",show=False)
-        fig_dir = paths.get_autoreject_report_dir(sub_id, ses_id)
-        # fig.savefig(fig_path / "autoreject_thresholds.png")
+        fig=reject_log.plot("horizontal",show=False)
+        fig_dir = paths.get_autoreject_report_dir (sub_id, ses_id)
+        fig.savefig(fig_dir / "autoreject_thresholds.png")
         # 4)  store the reject log in data.info
         if store_log:
             log_dir = paths.get_auto_reject_log_path(sub_id, ses_id)
-            log_file=os.path.join(log_dir,"autoreject_log.json")
-            with open(log_file, 'w') as f:
-                json.dump(reject_log, f,indent=4)
-                logging.info("[AutoRejectStep] AutoReject log saved to {log_path}")
+            log_file=os.path.join(log_dir,"autoreject_log.pickle")
+            with open(log_file, 'wb') as f:
+                pickle.dump(reject_log, f)
+                logging.info(f"[AutoRejectStep] AutoReject log saved to {log_dir}")
         logging.info("[AutoRejectStep] AutoReject finished.")
         return data

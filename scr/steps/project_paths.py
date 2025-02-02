@@ -44,7 +44,7 @@ class ProjectPaths:
         ses = f'ses{session_id}'
         return (
             self.processed_dir
-            / f"{sub}_{ses}_stage-{stage}_eeg.fif"
+            
         )
     def get_report_path(self, report_type, subject_id, session_id, name):
         """Standardized report paths"""
@@ -68,9 +68,8 @@ class ProjectPaths:
         ses = f'ses{session_id}'
         path = (
             self.processed_dir 
-            / f"{sub}_{ses}_desc-{checkpoint_name}_eeg.fif"
         )
-        self.ensure_parent(path)
+        path.mkdir(parents=True, exist_ok=True)
         return path
 
     def get_autoreject_report_dir(self, subject_id, session_id):
@@ -83,7 +82,7 @@ class ProjectPaths:
             / sub
             / ses
         )
-        self.ensure_parent(path)
+        path.mkdir(parents=True, exist_ok=True)
         return path    
     def get_ica_report_dir(self, subject_id, session_id):
         path = (
@@ -92,7 +91,7 @@ class ProjectPaths:
             / subject_id
             / session_id
         )
-        self.ensure_parent(path)
+        path.mkdir(parents=True, exist_ok=True)
         return path
 
     def ensure_parent(self, path: Path):

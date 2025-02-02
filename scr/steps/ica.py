@@ -6,7 +6,7 @@ from mne.preprocessing import ICA
 from mne.report import Report
 from pathlib import Path
 from .base import BaseStep
-import json
+import pickle
 import os
 class ICAStep(BaseStep):
     """
@@ -71,11 +71,11 @@ class ICAStep(BaseStep):
             autoreject_log = None
 
             log_dir = paths.get_auto_reject_log_path(sub_id, ses_id)
-            log_file = os.path.join(log_dir, "autoreject_log.json")
+            log_file = os.path.join(log_dir, "autoreject_log.pickle")
 
             if os.path.exists(log_file):
-                with open(log_file,'r') as f:
-                    autoreject_log = json.load(f)
+                with open(log_file,'rb') as f:
+                    autoreject_log = pickle.load(f)
                     logging.info("[ICAStep] AutoReject log loaded.")
                     
             events = mne.make_fixed_length_events(data, duration=1)
