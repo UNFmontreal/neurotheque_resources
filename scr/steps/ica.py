@@ -202,11 +202,12 @@ class ICAStep(BaseStep):
         # 8) Apply ICA
         # --------------------------
         data_clean = ica.apply(data.copy())
-
+        ica_dir=paths.get_derivative_path(sub_id, ses_id)/f'sub-{sub_id}_ses-{ses_id}_desc-ica_cleaned.fif'
+        data_clean.save(ica_dir, overwrite=True)
         # --------------------------
         # 9) Generate QA Report
         # --------------------------
-        self._generate_report(ica, data_clean, params)
+        self._generate_report(ica, data_clean, params,paths)
 
         # --------------------------
         # 10) Store Metadata
@@ -220,14 +221,13 @@ class ICAStep(BaseStep):
 
         return data_clean
 
-    def _generate_report(self, ica, data, params):
+    def _generate_report(self, ica, data, params,paths):
         """Create an MNE Report summarizing ICA."""
         from mne.report import Report
         import matplotlib.pyplot as plt
         
-        out_path = Path(params["plot_dir"])
-        out_path.mkdir(parents=True, exist_ok=True)
-
+        rep_dir = paths.get_ica_report_dir(params["subject_id"], params["session_id"])
+        
         report = Report(title="ICA Quality Report", verbose=False)
 
         report.add_ica(
@@ -237,6 +237,6 @@ class ICAStep(BaseStep):
             inst=data,
             n_jobs=None,  # could be increased!
         )
-        out_file = out_path / "ica_report.html"
+        out_file = rep_dir / "ica_report.html"
         report.save(out_file, overwrite=True, open_browser=False)
         logging.info(f"[ICAStep] ICA report saved at {out_file}")

@@ -39,49 +39,48 @@ pipeline:
         output_path: "data/pilot_data/after_autoreject.fif"
         overwrite: true
 
-    - name: ICAStep
-      params:
-        n_components: 0.99
-        method: 'infomax'
-        max_iter: 2000
-        fit_params:
-          extended: true
-          l_rate: 0.001
-        decim: 3
-        use_good_epochs_only: true
-        eog_ch_names: ['Fp1', 'Fp2']
-        eog_threshold: 0.5
-        ecg_channel: null
-        ecg_threshold: 0.3
-        exclude: []
-        plot_dir: "reports/ica"        # Will also be dynamically rewritten
-        interactive: true
-        plot_components: true
-        plot_sources: true
-
-    - name: SaveData
-      params:
-        # Will be updated with sub-XX/ses-YY automatically
-        output_path: "data/pilot_data/raw_preprocessed.fif"
-        overwrite: true
+    # - name: ICAStep
+    #   params:
+    #     n_components: 0.99
+    #     method: 'infomax'
+    #     max_iter: 2000
+    #     fit_params:
+    #       extended: true
+    #       l_rate: 0.001
+    #     decim: 3
+    #     use_good_epochs_only: true
+    #     eog_ch_names: [] #['Fp1', 'Fp2']
+    #     eog_threshold: 0.5
+    #     ecg_channel: null
+    #     ecg_threshold: 0.3
+    #     exclude: [1,2,6]
+    #     plot_dir: "reports/ica"        # Will also be dynamically rewritten
+    #     interactive: false
+    #     plot_components: false
+    #     plot_sources: false
 
     - name: SplitTasksStep
       params:
-        # same approach if you want them in sub-XX/ses-YY
-        output_folder: "data/pilot_data/tasks"
         tasks:
-          - name: "Rest_GoNoGo"
+
+          - name: "rest"
             start_trigger: 6
             end_trigger: 7
-          - name: "GoNoGo"
+
+          - name: "gng_image"
             start_trigger: 7
             end_trigger: 9
-          - name: "MentalImagery"
+
+          - name: "mental_imagery"
             start_trigger: 8
             end_trigger: 9
             occurrence_index: 2
-          - name: "LandoitC"
-            start_after_task: "GoNoGo"
+
+          - name: "landoitc"
+            start_after_task: "gng_image"
             start_offset_minutes: 14
             end_before_trigger: 6
+            end_before_occurrence_index: 2
             end_offset_minutes: 1
+
+

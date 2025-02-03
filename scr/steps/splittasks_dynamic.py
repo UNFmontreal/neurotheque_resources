@@ -34,12 +34,14 @@ class SplitTasksStep(BaseStep):
         if data is None:
             raise ValueError("[SplitTasksStep] No data to split.")
 
+
         # 1) Ensure we have an output folder (subject-specific if pipeline rewrote it)
-        output_folder = self.params.get("output_folder")
-        if not output_folder:
+        sub_id = self.params["subject_id"]
+        ses_id = self.params["session_id"]
+        paths=self.params['paths']
+        out_dir = paths.get_split_task_path(sub_id, ses_id)
+        if not out_dir:
             raise ValueError("[SplitTasksStep] 'output_folder' param is required.")
-        out_dir = Path(output_folder)
-        out_dir.mkdir(parents=True, exist_ok=True)
 
         # 2) Get tasks
         tasks = self.params.get("tasks", [])
@@ -82,7 +84,7 @@ class SplitTasksStep(BaseStep):
             sub_raw = data.copy().crop(tmin=tmin, tmax=tmax)
 
             # 5) Save to disk
-            save_path = out_dir / f"{task_name}.fif"
+            save_path = out_dir / f"sub-{sub_id}_ses-{ses_id}_desc-{task_name}_raw.fif"
             sub_raw.save(str(save_path), overwrite=True)
             logging.info(f"[SplitTasksStep] Saved {task_name} => {save_path}")
 
@@ -148,11 +150,10 @@ class SplitTasksStep(BaseStep):
             ebt = task_def["end_before_trigger"]
             ebt_occ_idx = task_def.get("end_before_occurrence_index", 1) - 1
             offset_mins = task_def.get("end_offset_minutes", 0)
-            offset_samps = int(offset_mins * 60 * sfreq)
+            offset_samps = int(offset_mins * 60 * sfreq) 
 
             if ebt in trigger_dict and len(trigger_dict[ebt]) > ebt_occ_idx:
-                ebt_samp = trigger_dict[ebt][ebt_occ_idx]
-                ebt_samp -= offset_samps
+                ebt_samp = trigger_dict[ebt][ebt_occ_idx] - offset_samps
                 if end_sample is None:
                     end_sample = ebt_samp
                 else:

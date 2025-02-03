@@ -15,11 +15,9 @@ class SplitTasksStep(BaseStep):
         if data is None:
             raise ValueError("[SplitTasksStep] No data to split.")
 
-        output_folder = self.params.get("output_folder")
+        output_folder = self.params.paths.get_split_task_path(self.params.subject_id, self.params.session_id)
         if not output_folder:
             raise ValueError("[SplitTasksStep] 'output_folder' param is required.")
-
-        os.makedirs(output_folder, exist_ok=True)
 
         events = mne.find_events(data, stim_channel='Trigger',
                                  min_duration=0.001, consecutive=False)
@@ -31,10 +29,10 @@ class SplitTasksStep(BaseStep):
             trigger_dict.setdefault(trig, []).append(samp)
 
         task_periods = {
-            'Rest_GoNoGo': {'start': None, 'end': None},
-            'GoNoGo': {'start': None, 'end': None},
-            'LandoitC': {'start': None, 'end': None},
-            'MentalImagery': {'start': None, 'end': None}
+            'rest': {'start': None, 'end': None},
+            'gng_image': {'start': None, 'end': None},
+            'landoitc': {'start': None, 'end': None},
+            'mental_imagery': {'start': None, 'end': None}
         }
 
         _define_task_periods(task_periods, trigger_dict, data.info['sfreq'])

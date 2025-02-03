@@ -38,13 +38,20 @@ class ProjectPaths:
         """Raw EEG data path following BIDS"""
         base_path = self.get_subject_session_path(subject_id, session_id)
         return base_path / "eeg" / f"{subject_id}_{session_id}_task-{task}_eeg.fif"
-    def get_derivative_path(self, subject_id, session_id, stage):
+    def get_derivative_path(self, subject_id, session_id):
         """Processed data path following BIDS derivatives"""
         sub = f'sub{subject_id}'    
         ses = f'ses{session_id}'
         return (
             self.processed_dir
             
+        )
+    def get_split_task_path(self, subject_id, session_id):
+        """Processed data path following BIDS derivatives"""
+        sub = f'sub{subject_id}'    
+        ses = f'ses{session_id}'
+        return (
+            self.processed_dir
         )
     def get_report_path(self, report_type, subject_id, session_id, name):
         """Standardized report paths"""

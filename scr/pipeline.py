@@ -109,9 +109,11 @@ class Pipeline:
                     print(f"[INFO] Found existing checkpoint => {ckpt_path}")
                     # Load it
                     try:
+                        ckpt_path = ckpt_path.resolve() / f'sub-{sub_id}_ses-{ses_id}_desc-after_autoreject_eeg.fif'
                         self.data = mne.io.read_raw_fif(ckpt_path, preload=True)
                         # If there's an autoreject log
-                        log_path = ckpt_path.with_name(ckpt_path.stem + "_rejectlog.pkl")
+                        
+                        log_path = self.paths.get_auto_reject_log_path(sub_id, ses_id) / 'autoreject_log.pickle'   #TODO: Debug f'sub-{sub_id}_ses-{ses_id}_desc-autoreject_log.pickle'
                         if log_path.exists():
                             with open(log_path, "rb") as f:
                                 if not hasattr(self.data.info, 'temp') or self.data.info['temp'] is None:
@@ -144,10 +146,13 @@ class Pipeline:
         If subject_id/session_id are provided, pass them to each step along with 'paths'.
         """
         for i, step_info in enumerate(steps_def):
-            if skip_index is not None and i <= skip_index:
+            if skip_index is not None and i <= skip_index: #TODO:  you need to skip the save checkpoint step too 
                 # skip the step
                 continue
-
+            if skip_index is not None and i == skip_index+1:
+                # Skip the SaveCheckpoint step
+                continue
+            
             step_info.setdefault("params", {})
             # If we have subject context, pass it in
             if subject_id and session_id:
