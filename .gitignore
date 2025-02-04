@@ -4,7 +4,7 @@
 *.edf
 .\amica
 .\amica_out
-.\data
+.\data\ 
 *.html
 combined_code.py
 combined_py_files.py
