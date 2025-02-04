@@ -8,7 +8,7 @@
 <br />
 
 <div align="center">
-  <img src="https://media.giphy.com/media/TrHjlqg31VfuhTtVKP/giphy.gif" alt="Neurotheque Animated Demo" width="600" />
+  <img src="doc/images/pipeline_animation.gif" alt="Neurotheque Pipeline Steps" width="600" />
   <p><em>Example animation </em></p>
 </div>
 
@@ -72,7 +72,7 @@ This repository is designed for both single-subject and multi-subject pipelines,
     ```bash
     python src/pipeline.py --config configs/pilot_preprocessing_strategy.yml
     ```
-    This loads the steps specified in the config (e.g. LoadData, FilterStep, AutoRejectStep, etc.) and applies them to your EEG data.
+    This loads the steps specified in the config (e.g. `LoadData`, `FilterStep`, `AutoRejectStep`, etc.) and applies them to your EEG data.
 
 2. **Use a Strategy Script**
     ```python
