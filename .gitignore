@@ -6,3 +6,7 @@
 .\amica_out
 .\data
 *.html
+combined_code.py
+combined_py_files.py
+export_repo_structure.py
+repo_structure.txt
