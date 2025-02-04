@@ -1,83 +1,44 @@
-# neuropipe
-eeg_pipeline/
-├── src/
-│   ├── pipeline.py         # The main Pipeline class (reads pipeline steps from config)
-│   ├── steps/              # Individual, reusable step definitions
-│   │   ├── base.py
-│   │   ├── load.py
-│   │   ├── filter.py
-│   │   ├── ica.py
-│   │   ├── autoreject.py
-│   │   ├── triggers.py
-│   │   ├── epoching.py
-│   │   ├── plot.py
-│   │   ├── save.py
-│   │   └── analysis/
-│   ├── preprocessing/
-│   │   ├──global_cleaning.py 
-│   │   └──task_preprocessing.py
-│   └── analysis/                # Pre-made analysis pipelines
-│       ├── gonogo_analysis.py
-│       ├── finger_tap_analysis.py
-│       ├── mental_imagery_analysis.py
-│       └── landoit_c_analysis.py
-│   ├── strategies/         # A folder of "pre-made strategy" scripts/classes
-│   │   ├── basic_cleaning.py
-│   │   ├── gonogo_strategy.py
-│   │   ├── finger_tapping_strategy.py
-│   │   ├── mental_imagery_strategy.py
-│   │   └── landoit_c_strategy.py
-├── configs/
-│   ├── basic_cleaning.yml
-│   ├── gonogo_example.yml
-│   ├── finger_tapping_example.yml
-│   ├── mental_imagery_example.yml
-│   └── landoit_c_example.yml
-├── checkpoints/ 
-├── tests/
-│   ├── test_pipeline.py
-│   ├── test_steps.py
-│   └── test_strategies.py
-├── README.md
-├── requirements.txt
-└── setup.py (or pyproject.toml)
+# Neurotheque Resources
 
+**Neurotheque Resources** is a comprehensive repository for EEG data processing and analysis. It provides a modular and configurable pipeline for:
+- Data loading and channel preparation
+- Filtering and artifact rejection (including automated rejection and ICA)
+- Task segmentation and trigger parsing
+- Epoching and event merging (e.g. for Go/No-Go experiments)
+- Advanced analyses such as time–frequency transformation and ERP/ROI analysis
+- Generating HTML reports with MNE’s reporting tools
 
+The code is built primarily on [MNE-Python](https://mne.tools/stable/index.html) and leverages several other libraries (e.g. [autoreject](https://autoreject.github.io/) to facilitate reproducible EEG research.
 
-neuropipe/
-├── src/
-│   ├── pipeline.py              # Pipeline class (executes steps in order)
-│   ├── steps/                   # Individual, reusable step definitions
-│   │   ├── base.py              # BaseStep (abstract class)
-│   │   ├── load.py              # LoadData step
-│   │   ├── filter.py            # FilterStep
-│   │   ├── ica.py               # ICAStep
-│   │   ├── autoreject.py        # AutoRejectStep
-│   │   ├── triggers.py          # TriggerParsingStep
-│   │   ├── epoching.py          # EpochingStep
-│   │   ├── plot.py (optional)   # Plotting steps
-│   │   ├── save.py              # SaveData step
-│   │   └── checkpoint.py (optional) # CheckpointStep
-│   ├── preprocessing/           # Pre-made pipelines or “strategies” for data cleaning
-│   │   ├── global_and_task_preprocessing.py 
-│   │   └── ...
-│   ├── analysis/                # Pre-made pipelines or “strategies” for task-level analysis
-│   │   ├── gonogo_analysis.py
-│   │   ├── finger_tap_analysis.py
-│   │   ├── mental_imagery_analysis.py
-│   │   └── landoit_c_analysis.py
-│   ├── strategies/              # Alternative location for “strategy” scripts
-│   │   ├── basic_cleaning.py
-│   │   ├── gonogo_strategy.py
-│   │   └── ...
-│   └── ...
-├── configs/                     # YAML config files for pipelines
-│   ├── basic_cleaning.yml
-│   ├── gonogo_example.yml
-│   └── ...
-├── checkpoints/                 # (Optional) folder for partial-run checkpoint files
-├── tests/                       # Unit & integration tests
-│   └── ...
-├── README.md
-├── requirements.txt
-└── setup.py (or pyproject.toml)
+## Repository Structure
+
+The repository is organized to facilitate reproducible research, modular pipeline execution, and collaborative development. The recommended folder structure is as follows:
+
+- **notebooks/**  
+  Contains Jupyter notebooks for:
+  - **tutorials/** – Step-by-step examples to help users get started.
+  - **preprocessing/** – Notebooks that demonstrate data cleaning, channel preparation, filtering, artifact rejection, and ICA.
+  - **analysis/** – Notebooks that illustrate how to perform epoching, event merging, ROI analysis, time–frequency analysis, and report generation.
+
+- **src/**  
+  Contains all the Python source code for the EEG processing pipelines. Major components include:
+  - **pipeline.py** – Main pipeline executor that loads a configuration (via YAML or a Python dictionary) and runs a series of processing steps.
+  - **steps/** – A collection of modular pipeline steps (e.g., `LoadData`, `FilterStep`, `AutoRejectStep`, `ICAStep`, `ReferenceStep`, `SplitTasksStep`, `TriggerParsingStep`, etc.) that implement individual processing tasks.
+  - **strategies/** – Example strategies for specific paradigms (e.g., finger tapping, mental imagery) that configure and run the pipeline.
+  - **utilities** – Utility scripts such as `combine_py_files.py` (to merge source files) and `export_repo_structure.py` (to generate a repository structure overview).
+
+- **doc/**  
+  Contains documentation files (manuals, technical reports, or usage guides) to help users understand how to configure and extend the pipeline.
+
+- **configs/**  
+  (If present) Contains YAML configuration files that define various pipeline setups (e.g., global preprocessing, Go/No-Go analysis, multi-subject strategies).
+
+## Getting Started
+
+### Installation
+
+1. **Clone the repository:**
+
+   ```bash
+   git clone https://github.com/UNFmontreal/neurotheque_resources.git
+   cd neurotheque_resources
