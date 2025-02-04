@@ -1,3 +1,7 @@
 {
-    "CodeGPT.apiKey": "Nvidia"
+    "CodeGPT.apiKey": "Nvidia",
+    "editor.tokenColorCustomizations": {
+        "comments": "",
+        "textMateRules": []
+    }
 }
