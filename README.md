@@ -9,7 +9,7 @@
 
 <div align="center">
   <img src="https://media.giphy.com/media/TrHjlqg31VfuhTtVKP/giphy.gif" alt="Neurotheque Animated Demo" width="600" />
-  <p><em>Example animation of an EEG processing pipeline (replace with your own GIF or pipeline diagram).</em></p>
+  <p><em>Example animation </em></p>
 </div>
 
 **Neurotheque Resources** is a comprehensive, modular toolkit for EEG data processing and analysis. Built on state‐of‐the‐art libraries such as [MNE-Python](https://mne.tools/stable/index.html), [autoreject](https://autoreject.github.io/) it enables:
