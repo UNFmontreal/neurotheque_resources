@@ -61,13 +61,30 @@ This repository is designed for both single-subject and multi-subject pipelines,
     ```bash
     git clone https://github.com/UNFmontreal/neurotheque_resources.git
     cd neurotheque_resources
+    ```
 2. **Install dependencies**:
     ```bash
     pip install -r requirements.txt
-
+    ```
 ## Usage Examples
 
 1. **Run a Pipeline with a YAML Configuration**
-
     ```bash
     python src/pipeline.py --config configs/pilot_preprocessing_strategy.yml
+    ```
+    This loads the steps specified in the config (e.g. LoadData, FilterStep, AutoRejectStep, etc.) and applies them to your EEG data.
+
+2. **Use a Strategy Script**
+    ```python
+    # Example: Using the finger tapping strategy
+    from src.strategies.finger_tapping_strategy import run_finger_tapping_pipeline
+
+    input_path = "data/raw/sub-01_ses-001_eeg.edf"
+    output_path = "data/processed/sub-01_ses-001_preprocessed.fif"
+
+    run_finger_tapping_pipeline(input_path, output_path)
+    ```
+3. **Explore the Jupyter Notebooks**    
+
+  ---
+
