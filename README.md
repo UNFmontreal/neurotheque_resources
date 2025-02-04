@@ -8,7 +8,7 @@
 <br />
 
 <div align="center">
-  <img src="doc/images/pipeline_animation.gif" alt="Neurotheque Pipeline Steps" width="600" />
+  <img src="docs/images/pipeline_animation.gif" alt="Neurotheque Pipeline Steps" width="600" />
   <p><em>Example animation </em></p>
 </div>
 
