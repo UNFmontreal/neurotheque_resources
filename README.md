@@ -8,8 +8,8 @@
 <br />
 
 <div align="center">
-  <img src="docs/images/pipeline_animation.gif" alt="Neurotheque Pipeline Steps" width="600" />
-  <p><em>Example animation </em></p>
+  <img src="docs/images/pipeline_animation_v1.gif" alt="Neurotheque Pipeline Steps" width="600" />
+  <p><em> </em></p>
 </div>
 
 **Neurotheque Resources** is a comprehensive, modular toolkit for EEG data processing and analysis. Built on state‐of‐the‐art libraries such as [MNE-Python](https://mne.tools/stable/index.html), [autoreject](https://autoreject.github.io/) it enables:
