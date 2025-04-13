@@ -19,7 +19,6 @@ from .ica_extraction import ICAExtractionStep
 from .ica_labeling import ICALabelingStep
 from .autoreject import AutoRejectStep
 from .save import SaveData
-from .reference import ReferenceStep
 from .save_checkpoint import SaveCheckpoint
 from .auto_save import AutoSave
 
@@ -40,7 +39,6 @@ except ImportError:
 # Register them in the global STEP_REGISTRY
 STEP_REGISTRY.update({
     "LoadData": LoadData,
-    "ReferenceStep": ReferenceStep,
     "FilterStep": FilterStep,
     "ICAStep": ICAStep,
     "ICAExtractionStep": ICAExtractionStep,

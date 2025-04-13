@@ -48,13 +48,29 @@ def apply_reference(data, params=None):
     if method == "average":
         # set_eeg_reference(ref_channels="average") => average re-ref
         logging.info("[apply_reference] Using average reference for EEG channels.")
-        data.set_eeg_reference(ref_channels="average", projection=projection)
+        try:
+            data.set_eeg_reference(ref_channels="average", projection=projection)
+        except Exception as e:
+            logging.error(f"[apply_reference] Error applying average reference: {str(e)}")
+            raise
     
     elif method == "channels":
         if not channels:
             raise ValueError("[apply_reference] method='channels' requires 'channels' param.")
+            
+        # Check if all reference channels exist in the data
+        missing_channels = [ch for ch in channels if ch not in data.ch_names]
+        if missing_channels:
+            error_msg = f"[apply_reference] Reference channel(s) {missing_channels} not found in data. Available channels: {data.ch_names}"
+            logging.error(error_msg)
+            raise ValueError(error_msg)
+            
         logging.info(f"[apply_reference] Using custom channels {channels} for reference.")
-        data.set_eeg_reference(ref_channels=channels, projection=projection)
+        try:
+            data.set_eeg_reference(ref_channels=channels, projection=projection)
+        except Exception as e:
+            logging.error(f"[apply_reference] Error applying custom channel reference: {str(e)}")
+            raise
     
     else:
         raise ValueError(f"[apply_reference] Unknown re-reference method '{method}'.")

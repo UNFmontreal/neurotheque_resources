@@ -44,9 +44,15 @@ class EpochingStep(BaseStep):
         Custom event_id dictionary for MNE Epochs (default: None)
     """
     
+    def __init__(self, params=None):
+        super().__init__(params)
+        logging.info(f"[EpochingStep.__init__] Initialized with params: {self.params}")
+    
     def run(self, data):
         if data is None:
             raise ValueError("[EpochingStep] No data provided.")
+        
+        logging.info(f"[EpochingStep.run] Running with params: {self.params}")
         
         # Get parameters
         task_type = self.params.get("task_type", "custom")
@@ -62,22 +68,73 @@ class EpochingStep(BaseStep):
         preload = epoch_params.get("preload", True)
         reject_by_annotation = epoch_params.get("reject_by_annotation", True)
         
+        # Get plotting parameters
+        auto_plot = self.params.get("auto_plot", False)
+        plot_params = self.params.get("plot_params", {})
+        
+        logging.info(f"[EpochingStep.run] Task type: {task_type}, Trigger IDs: {trigger_ids}")
+        logging.info(f"[EpochingStep.run] Epoch params: tmin={tmin}, tmax={tmax}, baseline={baseline}")
+        
         # Route to task-specific epoching method
         if task_type.lower() == "5pt":
-            return self._epoch_five_point_test(data, trigger_ids, tmin, tmax, baseline, preload, 
+            result = self._epoch_five_point_test(data, trigger_ids, tmin, tmax, baseline, preload, 
                                               reject_by_annotation, extract_continuous, returns_epochs)
         elif task_type.lower() == "gng":
-            return self._epoch_go_nogo(data, trigger_ids, tmin, tmax, baseline, preload, 
+            result = self._epoch_go_nogo(data, trigger_ids, tmin, tmax, baseline, preload, 
                                       reject_by_annotation, extract_continuous, returns_epochs)
         elif task_type.lower() == "continuous":
-            return self._extract_continuous_segment(data, trigger_ids, preload)
+            result = self._extract_continuous_segment(data, trigger_ids, preload)
         elif task_type.lower() == "fixed":
-            return self._epoch_fixed_length(data, trigger_ids, epoch_params, reject_by_annotation, 
+            result = self._epoch_fixed_length(data, trigger_ids, epoch_params, reject_by_annotation, 
                                            extract_continuous, returns_epochs)
         else:
             # Generic/custom epoching
-            return self._epoch_custom(data, trigger_ids, tmin, tmax, baseline, preload, 
+            result = self._epoch_custom(data, trigger_ids, tmin, tmax, baseline, preload, 
                                      reject_by_annotation, returns_epochs)
+        
+        # Optionally plot the results if auto_plot is True and we have epochs
+        if auto_plot and hasattr(result, 'event_id') and returns_epochs:
+            logging.info("[EpochingStep.run] Auto-plotting enabled, generating plots")
+            
+            # Get plotting parameters with defaults
+            plot_type = plot_params.get("plot_type", "average")
+            event_names = plot_params.get("event_names", None)
+            channels = plot_params.get("channels", None)
+            time_window = plot_params.get("time_window", None)
+            combine = plot_params.get("combine", False)
+            title = plot_params.get("title", None)
+            
+            # Generate plots
+            figures = self.plot_epochs(
+                result, 
+                plot_type=plot_type,
+                event_names=event_names,
+                channels=channels,
+                time_window=time_window,
+                combine=combine,
+                title=title
+            )
+            
+            # Store the figures in the result's metadata if available
+            if hasattr(result, 'metadata') and result.metadata is not None:
+                result.metadata['figures'] = figures
+            
+            # If save_plots is specified, save the figures
+            save_plots = plot_params.get("save_plots", False)
+            if save_plots:
+                self._save_figures(figures, plot_params.get("save_dir", None))
+        
+        # Visualize the detected events to verify correct detection
+        if self.params.get("visualize_events", False):
+            fig = self.plot_events_simple(data, events, stim_channel)
+            if fig:
+                logging.info("[EpochingStep] Simple event visualization created")
+                # Save the figure if requested
+                if self.params.get("plot_params", {}).get("save_plots", False):
+                    save_dir = self.params.get("plot_params", {}).get("save_dir", "figures/events")
+                    self._save_figures(fig, save_dir)
+        
+        return result
 
     def _epoch_five_point_test(self, data, trigger_ids, tmin, tmax, baseline, preload, 
                               reject_by_annotation, extract_continuous, returns_epochs):
@@ -380,8 +437,20 @@ class EpochingStep(BaseStep):
         nogo_id = trigger_ids.get("nogo", None)
         response_id = trigger_ids.get("response", None)
         
+        # Get stim channel parameter
+        stim_channel = self.params.get("stim_channel", "Trigger")
+        
         # Find events in the data
-        events = mne.find_events(data, stim_channel='STI', shortest_event=1)
+        events = mne.find_events(data, stim_channel=stim_channel, shortest_event=5,min_duration=0.01)
+
+        if len(events) == 0:
+            logging.error(f"[EpochingStep] No events found with stim_channel={stim_channel}. Available channels: {data.ch_names}")
+            # Try with STI as a fallback
+            if 'STI' in data.ch_names and stim_channel != 'STI':
+                logging.info("[EpochingStep] Trying with STI channel as fallback")
+                events = mne.find_events(data, stim_channel='STI', shortest_event=5, min_duration=0.001,verbose=True)
+        
+        logging.info(f"[EpochingStep] Found {len(events)} total events")
         
         # Create event dictionary
         event_id = {}
@@ -395,7 +464,17 @@ class EpochingStep(BaseStep):
         if not event_id:
             logging.warning("[EpochingStep] No Go/NoGo triggers defined for epoching")
             return data
-            
+        
+        # Visualize the detected events if requested
+        if self.params.get("visualize_events", False):
+            fig = self.plot_events_simple(data, events, stim_channel)
+            if fig:
+                logging.info("[EpochingStep] Simple event visualization created")
+                # Save the figure if requested
+                if self.params.get("plot_params", {}).get("save_plots", False):
+                    save_dir = self.params.get("plot_params", {}).get("save_dir", "figures/events")
+                    self._save_figures(fig, save_dir)
+        
         # Create epochs
         epochs = mne.Epochs(data, events, event_id=event_id, tmin=tmin, tmax=tmax,
                            baseline=baseline, preload=preload, 
@@ -467,8 +546,18 @@ class EpochingStep(BaseStep):
             logging.warning("[EpochingStep] Missing start or end trigger IDs for continuous extraction")
             return data
         
+        # Get stim channel parameter
+        stim_channel = self.params.get("stim_channel", "Trigger")
+        
         # Find events
-        events = mne.find_events(data, stim_channel='STI', shortest_event=1)
+        events = mne.find_events(data, stim_channel=stim_channel, shortest_event=1)
+        
+        if len(events) == 0:
+            logging.error(f"[EpochingStep] No events found with stim_channel={stim_channel}")
+            # Try with STI as a fallback
+            if 'STI' in data.ch_names and stim_channel != 'STI':
+                logging.info("[EpochingStep] Trying with STI channel as fallback")
+                events = mne.find_events(data, stim_channel='STI', shortest_event=1, verbose=True)
         
         # Find start and end events
         start_events = events[events[:, 2] == start_id]
@@ -493,8 +582,18 @@ class EpochingStep(BaseStep):
         """
         Generic epoching for custom trigger configurations.
         """
+        # Get stim channel parameter
+        stim_channel = self.params.get("stim_channel", "Trigger")
+        
         # Find events
-        events = mne.find_events(data, stim_channel='STI', shortest_event=1)
+        events = mne.find_events(data, stim_channel=stim_channel, shortest_event=1)
+        
+        if len(events) == 0:
+            logging.error(f"[EpochingStep] No events found with stim_channel={stim_channel}")
+            # Try with STI as a fallback
+            if 'STI' in data.ch_names and stim_channel != 'STI':
+                logging.info("[EpochingStep] Trying with STI channel as fallback")
+                events = mne.find_events(data, stim_channel='STI', shortest_event=1, verbose=True)
         
         # Convert trigger_ids to event_id format expected by MNE
         event_id = {}
@@ -719,3 +818,520 @@ class EpochingStep(BaseStep):
         # Save epochs
         epochs.save(save_path, overwrite=True)
         logging.info(f"[EpochingStep] Saved epochs to {save_path}")
+
+    def plot_epochs(self, epochs, plot_type='average', event_names=None, channels=None, 
+                   time_window=None, combine=False, title=None):
+        """
+        Plot epochs in different ways
+        
+        Parameters:
+        -----------
+        epochs : mne.Epochs
+            The epochs object to plot
+        plot_type : str
+            Type of plot ('average', 'butterfly', 'image', 'psd', 'topo', 'compare')
+        event_names : list or None
+            Names of events to include (if None, uses all)
+        channels : list or None
+            Channels to include (if None, uses all EEG channels)
+        time_window : tuple or None
+            (start, end) in seconds for time window to plot
+        combine : bool
+            Whether to combine channels (for image plot)
+        title : str or None
+            Plot title
+            
+        Returns:
+        --------
+        fig : matplotlib.figure.Figure or list of figures
+            The created figure(s)
+        """
+        import matplotlib.pyplot as plt
+        import numpy as np
+        
+        # Default event names if not specified
+        if event_names is None:
+            event_names = list(epochs.event_id.keys())
+        
+        # Default channels selection
+        if channels is None:
+            channels = 'eeg'  # Use all EEG channels
+        
+        # Set time window if specified
+        if time_window is not None:
+            epochs_plot = epochs.copy().crop(tmin=time_window[0], tmax=time_window[1])
+        else:
+            epochs_plot = epochs
+        
+        figures = []
+        
+        # Choose plot type
+        if plot_type == 'average':
+            # Plot average ERPs for each event type
+            for event_name in event_names:
+                try:
+                    # Create the evoked object first
+                    evoked = epochs_plot[event_name].average()
+                    # Set the comment field which will be used as title
+                    if title is None:
+                        evoked.comment = f'Average ERP for {event_name} events'
+                    else:
+                        evoked.comment = title
+                    # Plot with comment as title
+                    fig = evoked.plot(picks=channels, spatial_colors=True)
+                    plt.tight_layout()
+                    figures.append(fig)
+                except Exception as e:
+                    logging.error(f"Error in average plot: {str(e)}")
+        
+        elif plot_type == 'butterfly':
+            # Butterfly plot (all channels overlaid)
+            for event_name in event_names:
+                try:
+                    # Create the evoked object first
+                    evoked = epochs_plot[event_name].average()
+                    # Set the comment field which will be used as title
+                    if title is None:
+                        evoked.comment = f'Butterfly plot for {event_name} events'
+                    else:
+                        evoked.comment = title
+                    # Plot with comment as title
+                    fig = evoked.plot(picks=channels, spatial_colors=False)
+                    plt.tight_layout()
+                    figures.append(fig)
+                except Exception as e:
+                    logging.error(f"Error in butterfly plot: {str(e)}")
+        
+        elif plot_type == 'image':
+            # Image plot (epochs x time)
+            for event_name in event_names:
+                try:
+                    fig = epochs_plot[event_name].plot_image(
+                        picks=channels,
+                        combine=combine,
+                        title=f'Epochs image for {event_name}' if title is None else title
+                    )
+                    figures.append(fig)
+                except Exception as e:
+                    logging.error(f"Error in image plot: {str(e)}")
+        
+        elif plot_type == 'psd':
+            # Power spectral density
+            for event_name in event_names:
+                try:
+                    fig = epochs_plot[event_name].plot_psd(
+                        picks=channels,
+                        title=f'PSD for {event_name} epochs' if title is None else title
+                    )
+                    figures.append(fig)
+                except Exception as e:
+                    logging.error(f"Error in PSD plot: {str(e)}")
+        
+        elif plot_type == 'topo':
+            # Topographic plots at specific times
+            times = np.linspace(epochs_plot.tmin, epochs_plot.tmax, 5)
+            for event_name in event_names:
+                try:
+                    fig = epochs_plot[event_name].average().plot_topomap(
+                        times=times,
+                        title=f'Topography for {event_name}' if title is None else title
+                    )
+                    figures.append(fig)
+                except Exception as e:
+                    logging.error(f"Error in topo plot: {str(e)}")
+        
+        elif plot_type == 'compare':
+            # Compare average ERPs between conditions
+            if len(event_names) < 2:
+                logging.warning("[EpochingStep] Need at least 2 event types to compare")
+                return None
+            
+            try:
+                # Create averages
+                evokeds = [epochs_plot[event].average() for event in event_names]
+                
+                # Set different colors for each condition
+                colors = ['blue', 'red', 'green', 'orange', 'purple']
+                
+                # Create figure
+                fig, ax = plt.subplots(figsize=(10, 6))
+                
+                # Plot each condition
+                for i, (evoked, event_name) in enumerate(zip(evokeds, event_names)):
+                    times = evoked.times * 1000  # Convert to ms
+                    if channels == 'eeg' or isinstance(channels, list) and len(channels) > 1:
+                        # Average across selected channels if multiple
+                        data = evoked.data.mean(axis=0)
+                    else:
+                        # Get data for single channel
+                        ch_idx = evoked.ch_names.index(channels[0]) if isinstance(channels, list) else 0
+                        data = evoked.data[ch_idx]
+                    
+                    color = colors[i % len(colors)]
+                    ax.plot(times, data, label=event_name, color=color, linewidth=2)
+                
+                # Add vertical line at stimulus onset
+                ax.axvline(x=0, color='k', linestyle='--', alpha=0.5)
+                
+                # Add horizontal line at 0 μV
+                ax.axhline(y=0, color='k', linestyle='-', alpha=0.2)
+                
+                # Customize plot
+                ax.set_xlabel('Time (ms)')
+                ax.set_ylabel('Amplitude (μV)')
+                ax.set_title('Comparison of conditions' if title is None else title)
+                ax.legend()
+                plt.tight_layout()
+                figures.append(fig)
+            except Exception as e:
+                logging.error(f"Error in compare plot: {str(e)}")
+            
+        elif plot_type == 'difference':
+            # Plot difference between two conditions
+            if len(event_names) != 2:
+                logging.warning("[EpochingStep] Need exactly 2 event types for difference plot")
+                return None
+                
+            try:
+                # Get averages for the two conditions
+                evoked1 = epochs_plot[event_names[0]].average()
+                evoked2 = epochs_plot[event_names[1]].average()
+                
+                # Create difference wave
+                diff_wave = mne.combine_evoked([evoked1, evoked2], weights=[1, -1])
+                
+                # Set the comment field which will be used as title
+                if title is None:
+                    diff_wave.comment = f'Difference: {event_names[0]} - {event_names[1]}'
+                else:
+                    diff_wave.comment = title
+                
+                # Plot the difference - don't pass title parameter
+                fig = diff_wave.plot(picks=channels, spatial_colors=True)
+                
+                # Alternative approach: create a custom figure
+                # fig, ax = plt.subplots(figsize=(10, 6))
+                # times = diff_wave.times * 1000  # Convert to ms
+                # if channels == 'eeg' or isinstance(channels, list) and len(channels) > 1:
+                #     # Average across selected channels if multiple channels
+                #     data = diff_wave.data.mean(axis=0)
+                #     ax.plot(times, data, linewidth=2)
+                # else:
+                #     # Plot the selected channel
+                #     ch_idx = diff_wave.ch_names.index(channels[0]) if isinstance(channels, list) else 0
+                #     data = diff_wave.data[ch_idx]
+                #     ax.plot(times, data, linewidth=2)
+                # ax.axvline(x=0, color='k', linestyle='--', alpha=0.5)
+                # ax.axhline(y=0, color='k', linestyle='-', alpha=0.2)
+                # ax.set_xlabel('Time (ms)')
+                # ax.set_ylabel('Amplitude (μV)')
+                # ax.set_title('Difference: {event_names[0]} - {event_names[1]}' if title is None else title)
+                
+                plt.tight_layout()
+                figures.append(fig)
+            except Exception as e:
+                logging.error(f"Error in difference plot: {str(e)}")
+            
+        elif plot_type == 'gfp':
+            # Global Field Power plot
+            for event_name in event_names:
+                try:
+                    evoked = epochs_plot[event_name].average()
+                    fig, ax = plt.subplots(figsize=(10, 6))
+                    times = evoked.times * 1000  # Convert to ms
+                    gfp = np.sqrt(np.mean(evoked.data ** 2, axis=0))
+                    ax.plot(times, gfp, linewidth=2)
+                    ax.axvline(x=0, color='k', linestyle='--', alpha=0.5)
+                    ax.set_xlabel('Time (ms)')
+                    ax.set_ylabel('GFP (μV)')
+                    ax.set_title(f'Global Field Power: {event_name}' if title is None else title)
+                    plt.tight_layout()
+                    figures.append(fig)
+                except Exception as e:
+                    logging.error(f"Error in GFP plot: {str(e)}")
+        
+        else:
+            logging.warning(f"[EpochingStep] Unknown plot type: {plot_type}")
+            return None
+        
+        # Return either a single figure or a list of figures
+        if len(figures) == 1:
+            return figures[0]
+        else:
+            return figures
+
+    def plot_events_simple(self, raw, events, stim_channel=None):
+        """
+        Simple visualization of trigger channel and detected events.
+        
+        Parameters:
+        -----------
+        raw : mne.io.Raw
+            Raw data containing the trigger channel
+        events : ndarray
+            Events array from mne.find_events
+        stim_channel : str or None
+            Name of the stim channel (if None, use the one from params)
+            
+        Returns:
+        --------
+        fig : matplotlib.figure.Figure
+            The created figure
+        """
+        import matplotlib.pyplot as plt
+        import numpy as np
+        
+        # Get stim channel if not provided
+        if stim_channel is None:
+            stim_channel = self.params.get("stim_channel", "Trigger")
+        
+        # Check if stim channel exists in the data
+        if stim_channel not in raw.ch_names:
+            logging.warning(f"[EpochingStep] Stim channel {stim_channel} not found in raw data")
+            return None
+        
+        # Get the stim channel data
+        pick_idx = raw.ch_names.index(stim_channel)
+        stim_data, times = raw[pick_idx, :]
+        stim_data = stim_data.flatten()
+        
+        # Create a simple figure
+        fig, ax = plt.subplots(figsize=(12, 6))
+        
+        # Plot trigger channel
+        ax.plot(times, stim_data, 'k-', linewidth=1, label='Trigger Channel')
+        
+        # Mark events with vertical lines
+        # Adjust for raw.first_samp to align events with times
+        event_times = (events[:, 0] - raw.first_samp) / raw.info['sfreq']
+        event_values = events[:, 2]
+        
+        # Log first few events for debugging
+        logging.info(f"[EpochingStep] First few events (adjusted for first_samp={raw.first_samp}):")
+        for i in range(min(5, len(events))):
+            logging.info(f"  Event {i}: ID={events[i, 2]}, time={event_times[i]:.3f}s, sample={events[i, 0]}")
+        
+        # Get unique event values
+        unique_values = np.unique(event_values)
+        colors = plt.cm.tab10(np.linspace(0, 1, len(unique_values)))
+        
+        # Plot each event type
+        for i, val in enumerate(unique_values):
+            # Find events with this value
+            mask = event_values == val
+            if np.sum(mask) > 0:
+                ev_times = event_times[mask]
+                # Plot vertical lines for these events
+                for t in ev_times:
+                    ax.axvline(t, color=colors[i], linestyle='--', alpha=0.7)
+                # Add one point for the legend
+                ax.plot([], [], color=colors[i], linestyle='--', label=f'Event ID: {val} (n={np.sum(mask)})')
+        
+        # Add labels and legend
+        ax.set_xlabel('Time (s)')
+        ax.set_ylabel('Amplitude')
+        ax.set_title(f'Trigger Channel ({stim_channel}) and Detected Events')
+        ax.legend(loc='upper right')
+        
+        # Add text showing raw.first_samp for clarity
+        plt.figtext(0.02, 0.02, f"raw.first_samp = {raw.first_samp}", fontsize=8,
+                   bbox=dict(facecolor='white', alpha=0.8))
+        
+        plt.tight_layout()
+        return fig
+
+    def _save_figures(self, figures, save_dir=None):
+        """
+        Save generated figures to disk.
+        
+        Parameters:
+        -----------
+        figures : matplotlib.figure.Figure or list
+            Figure or list of figures to save
+        save_dir : str or Path or None
+            Directory to save figures in (default: current directory)
+        """
+        import matplotlib.pyplot as plt
+        from pathlib import Path
+        import os
+        
+        # Convert single figure to list for uniform handling
+        if not isinstance(figures, list):
+            figures = [figures]
+            
+        # Set the save directory
+        if save_dir is None:
+            # Try to get from params
+            paths = self.params.get("paths", None)
+            if paths is not None:
+                sub_id = self.params.get("subject_id", "unknown")
+                ses_id = self.params.get("session_id", "001")
+                task_id = self.params.get("task_id", None)
+                run_id = self.params.get("run_id", None)
+                
+                save_dir = paths.get_derivative_path(
+                    subject_id=sub_id,
+                    session_id=ses_id,
+                    task_id=task_id,
+                    run_id=run_id,
+                    stage="figures/epochs"
+                )
+            else:
+                save_dir = "figures/epochs"
+        
+        # Ensure directory exists
+        os.makedirs(str(save_dir), exist_ok=True)
+        
+        # Get the base filename
+        sub_id = self.params.get("subject_id", "unknown")
+        ses_id = self.params.get("session_id", "001")
+        task_id = self.params.get("task_id", None)
+        run_id = self.params.get("run_id", None)
+        
+        base_filename = f"sub-{sub_id}_ses-{ses_id}"
+        if task_id:
+            base_filename += f"_task-{task_id}"
+        if run_id:
+            base_filename += f"_run-{run_id}"
+        
+        # Save each figure
+        for i, fig in enumerate(figures):
+            if fig is not None:
+                # Create filename
+                filename = f"{base_filename}_plot-{i+1}.png"
+                filepath = Path(save_dir) / filename
+                
+                # Save the figure
+                fig.savefig(filepath, dpi=300, bbox_inches='tight')
+                logging.info(f"[EpochingStep] Saved figure to {filepath}")
+
+    def generate_plots(self, epochs, plot_params=None):
+        """
+        Generate plots from existing epochs without rerunning the epoching step.
+        This provides a convenient way to create different visualizations after epoching.
+        
+        Parameters:
+        -----------
+        epochs : mne.Epochs
+            The epochs to plot
+        plot_params : dict, optional
+            Dictionary containing plotting parameters:
+            - plot_type: Type of plot ('average', 'butterfly', 'image', 'psd', etc.)
+            - event_names: Names of events to include (if None, uses all)
+            - channels: Channels to include (if None, uses all EEG channels)
+            - time_window: (start, end) in seconds for time window to plot
+            - combine: Whether to combine channels (for image plot)
+            - title: Plot title
+            - save_plots: Whether to save the generated plots (default: False)
+            - save_dir: Directory to save plots in (default: uses project paths)
+            
+        Returns:
+        --------
+        figures : matplotlib.figure.Figure or list of figures
+            The generated figures
+        """
+        if not hasattr(epochs, 'event_id'):
+            logging.error("[EpochingStep.generate_plots] Input is not a valid Epochs object")
+            return None
+            
+        # Use provided plot_params or empty dict
+        plot_params = plot_params or {}
+        
+        # Get plotting parameters with defaults
+        plot_type = plot_params.get("plot_type", "average")
+        event_names = plot_params.get("event_names", None)
+        channels = plot_params.get("channels", None)
+        time_window = plot_params.get("time_window", None)
+        combine = plot_params.get("combine", False)
+        title = plot_params.get("title", None)
+        
+        # Generate plots
+        figures = self.plot_epochs(
+            epochs, 
+            plot_type=plot_type,
+            event_names=event_names,
+            channels=channels,
+            time_window=time_window,
+            combine=combine,
+            title=title
+        )
+        
+        # If save_plots is specified, save the figures
+        save_plots = plot_params.get("save_plots", False)
+        if save_plots:
+            self._save_figures(figures, plot_params.get("save_dir", None))
+            
+        return figures
+
+# Example usage of the plotting functionality:
+"""
+# Example 1: Auto-plotting during epoching
+epoching_params = {
+    "task_type": "gng",
+    "trigger_ids": {"go": 1, "nogo": 2, "response": 3},
+    "epoch_params": {"tmin": -0.2, "tmax": 0.8},
+    # Enable auto-plotting
+    "auto_plot": True,
+    "plot_params": {
+        "plot_type": "average",  # Options: average, butterfly, image, psd, topo, compare, difference, gfp
+        "event_names": ["go", "nogo"],  # Which events to plot (if None, plots all)
+        "channels": ["Fz", "Cz", "Pz"],  # Which channels to plot (if None, plots all EEG)
+        "time_window": [-0.1, 0.5],  # Optional time window to focus on
+        "combine": False,  # Whether to combine channels (for image plots)
+        "title": "Go/NoGo Task ERPs",  # Optional custom title
+        "save_plots": True,  # Whether to save the plots to disk
+        "save_dir": "figures/my_analysis"  # Optional custom save directory
+    }
+}
+
+# Create and run the epoching step
+epoching_step = EpochingStep(params=epoching_params)
+epochs = epoching_step.run(raw_data)  # Automatically generates and saves plots
+
+# Example 2: Generate plots after epoching
+# If you've already run the epoching step without auto_plot,
+# you can still generate plots later:
+
+# Create basic epoching step without auto-plot
+basic_params = {
+    "task_type": "5pt",
+    "trigger_ids": {"trigger_id": 8},
+    "epoch_params": {"tmin": -0.2, "tmax": 1.0}
+}
+epoching_step = EpochingStep(params=basic_params)
+epochs = epoching_step.run(raw_data)  # No plots generated yet
+
+# Later, generate different plot types as needed
+butterfly_plot = epoching_step.generate_plots(
+    epochs,
+    plot_params={
+        "plot_type": "butterfly",
+        "channels": ["Fz", "Cz", "Pz"],
+        "save_plots": True
+    }
+)
+
+# Generate comparison plots between conditions
+if "go" in epochs.event_id and "nogo" in epochs.event_id:
+    comparison_plots = epoching_step.generate_plots(
+        epochs,
+        plot_params={
+            "plot_type": "compare",
+            "event_names": ["go", "nogo"],
+            "channels": ["Fz"],  # Look at frontal channels for NoGo effects
+            "title": "Go vs. NoGo Comparison",
+            "save_plots": True
+        }
+    )
+
+# Generate topographic plots to see spatial distribution
+topo_plots = epoching_step.generate_plots(
+    epochs,
+    plot_params={
+        "plot_type": "topo",
+        "event_names": ["onset"],
+        "time_window": [0, 0.3],  # Focus on early components
+        "save_plots": True
+    }
+)
+"""
