@@ -1,0 +1,19 @@
+AutoReject Summary
+=================
+
+Subject: 01, Session: 001, Task: 5pt, Run: 01
+
+Total Epochs: 321
+Bad Epochs: 111 (34.6%)
+
+Classification Summary:
+Good: 3657 points (57.0%)
+Interpolated: 900 points (14.0%)
+Bad: 1221 points (19.0%)
+
+Potentially Problematic Channels (>50% rejection rate):
+- F3: 94.7%
+- C4: 69.5%
+- O1: 100.0%
+- F7: 77.6%
+- F8: 58.9%

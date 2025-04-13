@@ -1,0 +1,47 @@
+directory:
+  root: "./"
+  raw_data_dir: "data/pilot_data"
+  processed_dir: "data/pilot_data"
+  reports_dir: "reports"
+  derivatives_dir: "derivatives"
+
+default_subject: "01" 
+default_session: "001"
+default_run: "01"
+
+pipeline_mode: "standard"
+auto_save: false
+
+# Fixed file path pattern with proper relative path
+file_path_pattern: "sub-01_ses-001_raw.edf"
+
+pipeline:
+  steps:
+    - name: LoadData
+      params:
+        # No need to specify input_file, it's derived from file_path_pattern
+        input_file: null
+
+    - name: SplitTasksStep
+      params:
+        output_folder: "data/pilot_data/split_tasks"
+        tasks:
+          - name: "rest"
+            start_trigger: 6
+            end_trigger: 7
+
+          - name: "gng_image"
+            start_trigger: 7
+            end_trigger: 9
+
+          - name: "mental_imagery"
+            start_trigger: 8
+            end_trigger: 9
+            occurrence_index: 2
+
+          - name: "landoitc"
+            start_after_task: "gng_image"
+            start_offset_minutes: 14
+            end_before_trigger: 6
+            end_before_occurrence_index: 2
+            end_offset_minutes: 1 

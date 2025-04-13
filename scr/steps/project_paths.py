@@ -34,70 +34,124 @@ class ProjectPaths:
         ses = self.validate_id(session_id, "ses")
         return self.raw_data_dir / sub / ses
     
-    def get_raw_eeg_path(self, subject_id, session_id, task):
+    def get_raw_eeg_path(self, subject_id, session_id, task_id, run_id=None):
         """Raw EEG data path following BIDS"""
         base_path = self.get_subject_session_path(subject_id, session_id)
-        return base_path / "eeg" / f"{subject_id}_{session_id}_task-{task}_eeg.fif"
-    def get_derivative_path(self, subject_id, session_id):
+        filename = f"{subject_id}_{session_id}_task-{task_id}"
+        if run_id:
+            filename += f"_run-{run_id}"
+        filename += "_eeg.fif"
+        return base_path / "eeg" / filename
+        
+    def get_derivative_path(self, subject_id, session_id, task_id=None, run_id=None, stage=None):
         """Processed data path following BIDS derivatives"""
-        sub = f'sub{subject_id}'    
-        ses = f'ses{session_id}'
-        return (
-            self.processed_dir
-            
-        )
-    def get_split_task_path(self, subject_id, session_id):
+        sub = f'sub-{subject_id}'    
+        ses = f'ses-{session_id}'
+        filename = f"{sub}_{ses}"
+        if task_id:
+            filename += f"_task-{task_id}"
+        if run_id:
+            filename += f"_run-{run_id}"
+        if stage:
+            filename += f"_{stage}"
+        filename += ".fif"
+        
+        path = self.processed_dir / sub / ses
+        path.mkdir(parents=True, exist_ok=True)
+        return path / filename
+        
+    def get_split_task_path(self, subject_id, session_id, task_id=None, run_id=None):
         """Processed data path following BIDS derivatives"""
-        sub = f'sub{subject_id}'    
-        ses = f'ses{session_id}'
-        return (
-            self.processed_dir
-        )
-    def get_report_path(self, report_type, subject_id, session_id, name):
+        sub = f'sub-{subject_id}'    
+        ses = f'ses-{session_id}'
+        filename = f"{sub}_{ses}"
+        if task_id:
+            filename += f"_task-{task_id}"
+        if run_id:
+            filename += f"_run-{run_id}"
+        filename += "_split.fif"
+        
+        path = self.processed_dir / sub / ses
+        path.mkdir(parents=True, exist_ok=True)
+        return path / filename
+        
+    def get_report_path(self, report_type, subject_id, session_id, task_id=None, run_id=None, name=None):
         """Standardized report paths"""
         sub = self.validate_id(subject_id, "sub")
         ses = self.validate_id(session_id, "ses")
-        path = self.reports_dir / report_type / sub / ses 
+        path = self.reports_dir / report_type / sub / ses
+        
+        if task_id:
+            path = path / f"task-{task_id}"
+        if run_id:
+            path = path / f"run-{run_id}"
+            
         path.mkdir(parents=True, exist_ok=True)
-        return path / name        
+        
+        if name:
+            return path / name
+        return path
     
-    def get_auto_reject_log_path(self, subject_id, session_id):
-        """Standardized path for autoreject log"""
-        sub = f'sub{subject_id}'    
-        ses = f'ses{session_id}'
-        path= (
-            self.processed_dir
-        )    
-        return path
-    def get_checkpoint_path(self, subject_id, session_id, checkpoint_name):
-        """Standardized checkpoint pathing"""
-        sub = f'sub{subject_id}'    
-        ses = f'ses{session_id}'
-        path = (
-            self.processed_dir 
-        )
+    def get_auto_reject_log_path(self, subject_id, session_id, task_id=None, run_id=None):
+        """
+        DEPRECATED: This function is kept for backward compatibility only.
+        
+        AutoReject now stores bad epochs as annotations in the data instead of log files.
+        This makes pipelines simpler and more reliable as annotations are saved with the data.
+        
+        Returns a placeholder path that maintains compatibility with existing code.
+        """
+        import logging
+        logging.warning("get_auto_reject_log_path is deprecated - AutoReject now uses annotations instead of log files")
+        
+        sub = f'sub-{subject_id}'    
+        ses = f'ses-{session_id}'
+        
+        # Create a basic path for compatibility
+        path = self.processed_dir / sub / ses
         path.mkdir(parents=True, exist_ok=True)
         return path
+        
+    def get_checkpoint_path(self, subject_id, session_id, task_id=None, run_id=None, checkpoint_name=None):
+        """Standardized checkpoint pathing"""
+        sub = f'sub-{subject_id}'    
+        ses = f'ses-{session_id}'
+        filename = f"{sub}_{ses}"
+        if task_id:
+            filename += f"_task-{task_id}"
+        if run_id:
+            filename += f"_run-{run_id}"
+        if checkpoint_name:
+            filename += f"_{checkpoint_name}"
+        filename += ".fif"
+        
+        path = self.processed_dir / sub / ses
+        path.mkdir(parents=True, exist_ok=True)
+        return path / filename
 
-    def get_autoreject_report_dir(self, subject_id, session_id):
+    def get_autoreject_report_dir(self, subject_id, session_id, task_id=None, run_id=None):
         """Standardized report directory with auto-creation"""
-        sub = f'sub{subject_id}'    
-        ses = f'ses{session_id}'        
-        path = (
-            self.reports_dir
-            / "autoreject"
-            / sub
-            / ses
-        )
+        sub = f'sub-{subject_id}'    
+        ses = f'ses-{session_id}'        
+        path = self.reports_dir / "autoreject" / sub / ses
+        
+        if task_id:
+            path = path / f"task-{task_id}"
+        if run_id:
+            path = path / f"run-{run_id}"
+            
         path.mkdir(parents=True, exist_ok=True)
         return path    
-    def get_ica_report_dir(self, subject_id, session_id):
-        path = (
-            self.reports_dir
-            / "ica"
-            / subject_id
-            / session_id
-        )
+        
+    def get_ica_report_dir(self, subject_id, session_id, task_id=None, run_id=None):
+        """Report directory for ICA results"""
+        path = self.reports_dir / "ica" / subject_id / session_id
+        
+        if task_id:
+            path = path / f"task-{task_id}"
+        if run_id:
+            path = path / f"run-{run_id}"
+            
         path.mkdir(parents=True, exist_ok=True)
         return path
 

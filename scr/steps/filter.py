@@ -6,13 +6,35 @@ class FilterStep(BaseStep):
     """
     Step to apply bandpass and/or notch filters on an mne.Raw or mne.Epochs object.
     """
+    
+    def __init__(self, params=None):
+        """
+        Initialize the FilterStep with parameters.
+        
+        Parameters
+        ----------
+        params : dict, optional
+            Dictionary containing filter parameters:
+            - l_freq (float): low cutoff frequency
+            - h_freq (float): high cutoff frequency 
+            - notch_freqs (list): list of freqs to notch out
+        """
+        super().__init__()
+        self.params = params or {}
 
     def run(self, data):
         """
-        Expected params:
-        - l_freq (float): low cutoff frequency
-        - h_freq (float): high cutoff frequency
-        - notch_freqs (list): list of freqs to notch out
+        Apply filtering to the provided data.
+        
+        Parameters
+        ----------
+        data : mne.Raw or mne.Epochs
+            Data to be filtered
+            
+        Returns
+        -------
+        data : mne.Raw or mne.Epochs
+            Filtered data
         """
         if data is None:
             raise ValueError("No data available to filter.")

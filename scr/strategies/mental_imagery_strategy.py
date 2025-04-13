@@ -1,12 +1,24 @@
 # src/strategies/mental_imagery_strategy.py
 
-from src.pipeline import Pipeline
+from scr.pipeline import Pipeline
 
-def run_mental_imagery_pipeline(input_path, output_path):
+def run_mental_imagery_pipeline(input_path, output_path, run_id=None):
     """
     Example pipeline for mental imagery tasks.
+    
+    Parameters:
+    -----------
+    input_path : str
+        Path to the input file
+    output_path : str
+        Path to save the output file
+    run_id : str, optional
+        Run identifier if multiple runs are available
     """
     config_dict = {
+        "default_subject": "01",
+        "default_session": "001",
+        "default_run": run_id if run_id else "01",
         "pipeline": {
             "steps": [
                 {

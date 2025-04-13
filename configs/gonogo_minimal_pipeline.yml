@@ -1,0 +1,43 @@
+auto_save: true
+default_run: '01'
+default_session: '001'
+default_subject: '01'
+directory:
+  derivatives_dir: derivatives
+  processed_dir: data/processed
+  raw_data_dir: data/pilot_data/tasks
+  reports_dir: reports/minimal
+  root: D:/Yann/neurotheque_resources/
+file_path_pattern: sub-01_ses-001_task-gng_image_run-01_raw.fif
+pipeline:
+  steps:
+  - name: LoadData
+    params:
+      input_file: null
+  - name: PrepChannelsStep
+    params:
+      channel_types:
+        X1:ECG: ecg
+      on_missing: ignore
+  - name: FilterStep
+    params:
+      h_freq: 40.0
+      l_freq: 1.0
+      notch_freqs:
+      - 50
+      - 60
+  - name: EpochingStep
+    params:
+      baseline:
+      - null
+      - 0
+      event_id:
+        go: 1
+        nogo: 2
+      stim_channel: Trigger
+      tmax: 1.0
+      tmin: -0.2
+  - name: SaveCheckpoint
+    params:
+      overwrite: true
+pipeline_mode: standard

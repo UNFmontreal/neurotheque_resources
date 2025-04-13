@@ -1,13 +1,20 @@
 # src/steps/prepchannels.py
 
 import logging
+import sys
+import os
 from mne.channels import make_standard_montage
 from .base import BaseStep
+
+# Ensure utils is in the path
+sys.path.append(os.path.abspath('../../'))
+from scr.utils.reference import apply_reference
 
 class PrepChannelsStep(BaseStep):
     """
     Drops non-EEG channels, renames them, sets channel types & montage.
     Mirrors the notebook's channel preparation logic.
+    Can also handle re-referencing as part of channel preparation.
     """
     def run(self, data):
         if data is None:
@@ -15,8 +22,8 @@ class PrepChannelsStep(BaseStep):
 
         # 1) Drop non-EEG channels
         non_eeg_channels = [
-            'EEG X1:ECG-Pz', 'EEG X2:-Pz', 'EEG X3:-Pz',
-            'CM', 'EEG A1-Pz', 'EEG A2-Pz'
+            'X1:ECG', 'EEG X1:-Pz', 'ECG-Pz', 'EEG X2:-Pz', 'EEG X3:-Pz',
+            'CM', 'EEG A1-Pz', 'EEG A2-Pz' , 'Event'
         ]
         existing_non_eeg = [ch for ch in non_eeg_channels if ch in data.info['ch_names']]
         data.drop_channels(existing_non_eeg)
@@ -29,14 +36,30 @@ class PrepChannelsStep(BaseStep):
 
         # 3) Set channel types
         for ch in data.info['ch_names']:
-            if ch in rename_mapping.values():
-                data.set_channel_types({ch: 'eeg'})
-            elif 'Trigger' in ch:
+            if 'Trigger' in ch:
                 data.set_channel_types({ch: 'stim'})
-            else:
+            elif 'CM' in ch:
                 data.set_channel_types({ch: 'misc'})
-
-        # 4) Montage
+            else:
+                data.set_channel_types({ch: 'eeg'})
+    
+        # 4) Apply re-referencing (our system uses Pz as reference)
+        reference_params = self.params.get("reference", {})
+        if reference_params:
+            logging.info("[PrepChannelsStep] Applying re-referencing")
+            # Default reference parameters for our EEG system
+            if not reference_params.get("method"):
+                reference_params["method"] = "channels"
+            if not reference_params.get("channels") and reference_params["method"] == "channels":
+                reference_params["channels"] = ["Pz"]  # Our system uses Pz as reference
+            
+            try:
+                data = apply_reference(data, reference_params)
+            except Exception as e:
+                logging.error(f"[PrepChannelsStep] Error during re-referencing: {str(e)}")
+                logging.info("[PrepChannelsStep] Continuing without re-referencing")
+        
+        # 5) Montage
         montage = make_standard_montage('standard_1020')
         data.set_montage(montage)
 

@@ -1,0 +1,103 @@
+
+directory:
+  root: "e:/Yann/neurotheque_resources/"
+  raw_data_dir: "data/pilot_data/"
+  processed_dir: "data/processed"
+  reports_dir: "reports"
+  derivatives_dir: "derivatives"
+
+default_subject: "01"
+default_session: "001"
+default_task: "5pt"
+default_run: "01"
+
+pipeline:
+  multi_subject: true
+  multi_session: false
+  multi_task: false
+  multi_run: false
+  
+  steps:
+    - name: LoadData
+      params:
+        file_path_pattern: "sub-01_ses-001_task-5pt_run-01_raw.edf"
+
+    - name: PrepChannelsStep
+
+    - name: FilterStep
+      params:
+        l_freq: 1
+        h_freq: 40
+        notch_freqs: [60, 120]
+
+    - name: "EpochingStep"
+      params:
+        task_type: "5pt"
+        trigger_ids:
+          start: 8     # Task start trigger
+          end: 8       # Task end trigger
+          onset: 8     # When 5 points appear
+          response: 8  # First touch by participant
+        epoch_params:
+          tmin: -0.2   # Time before trigger
+          tmax: 1.0    # Time after trigger
+          baseline: [null, 0]
+        extract_continuous: false  # Set to true to get the entire task segment
+        
+    - name: AutoRejectStep
+      params:
+        ar_params:
+          consensus: null
+          n_interpolate: null
+          random_state: null
+          thresh_method: 'bayesian_optimization'
+        store_log: true
+        store_as_annotations: true
+
+    - name: SaveCheckpoint
+      params:
+        checkpoint_key: "after_autoreject"
+
+    - name: ICAStep
+      params:
+        n_components: 18
+        method: 'infomax'
+        max_iter: 2000
+        fit_params:
+          extended: true
+          l_rate: 0.001
+        decim: 3
+        use_good_epochs_only: true
+        eog_ch_names: [] #['Fp1', 'Fp2']
+        eog_threshold: 0.5
+        ecg_channel: null
+        ecg_threshold: 0.3
+        exclude: []
+        plot_components: true
+        plot_sources: true
+
+    - name: SplitTasksStep
+      params:
+        tasks:
+
+          - name: "rest"
+            start_trigger: 6
+            end_trigger: 7
+
+          - name: "gng_image"
+            start_trigger: 7
+            end_trigger: 9
+
+          - name: "mental_imagery"
+            start_trigger: 8
+            end_trigger: 9
+            occurrence_index: 2
+
+          - name: "landoitc"
+            start_after_task: "gng_image"
+            start_offset_minutes: 14
+            end_before_trigger: 6
+            end_before_occurrence_index: 2
+            end_offset_minutes: 1
+
+

@@ -1,0 +1,31 @@
+2025-04-13 00:13:30,175 - INFO - Running minimal pipeline on data/pilot_data/tasks/sub-01_ses-001_task-gng_image_run-01_raw.fif
+2025-04-13 00:13:30,176 - INFO - === Running MINIMAL pipeline ===
+2025-04-13 00:13:30,181 - INFO - Loading data from data/pilot_data/tasks/sub-01_ses-001_task-gng_image_run-01_raw.fif
+2025-04-13 00:13:30,301 - INFO - Loaded data: 27 channels, duration: 1014.85s
+2025-04-13 00:13:30,301 - INFO - Running PrepChannels step
+2025-04-13 00:14:09,969 - INFO - Running minimal pipeline on data/pilot_data/tasks/sub-01_ses-001_task-gng_image_run-01_raw.fif
+2025-04-13 00:14:09,969 - INFO - === Running MINIMAL pipeline ===
+2025-04-13 00:14:09,971 - INFO - Loading data from data/pilot_data/tasks/sub-01_ses-001_task-gng_image_run-01_raw.fif
+2025-04-13 00:14:10,082 - INFO - Loaded data: 27 channels, duration: 1014.85s
+2025-04-13 00:14:10,083 - INFO - Running PrepChannels step
+2025-04-13 00:14:10,085 - WARNING - Could not plot channel locations: No valid channel positions found
+2025-04-13 00:14:10,085 - INFO - Setting a standard montage for EEG channels...
+2025-04-13 00:14:10,087 - INFO - EEG channel names: ['EEG P3-Pz', 'EEG C3-Pz', 'EEG F3-Pz', 'EEG Fz-Pz', 'EEG F4-Pz', 'EEG C4-Pz', 'EEG P4-Pz', 'EEG Cz-Pz', 'CM', 'EEG A1-Pz', 'EEG Fp1-Pz', 'EEG Fp2-Pz', 'EEG T3-Pz', 'EEG T5-Pz', 'EEG O1-Pz', 'EEG O2-Pz', 'EEG X3:-Pz', 'EEG X2:-Pz', 'EEG F7-Pz', 'EEG F8-Pz', 'EEG X1:ECG-Pz', 'EEG A2-Pz', 'EEG T6-Pz', 'EEG T4-Pz', 'Pz', 'Event']
+2025-04-13 00:14:10,097 - WARNING - Could not set standard montage: DigMontage is only a subset of info. There are 25 channel positions not present in the DigMontage. The channels missing from the montage are:
+
+['EEG P3-Pz', 'EEG C3-Pz', 'EEG F3-Pz', 'EEG Fz-Pz', 'EEG F4-Pz', 'EEG C4-Pz', 'EEG P4-Pz', 'EEG Cz-Pz', 'CM', 'EEG A1-Pz', 'EEG Fp1-Pz', 'EEG Fp2-Pz', 'EEG T3-Pz', 'EEG T5-Pz', 'EEG O1-Pz', 'EEG O2-Pz', 'EEG X3:-Pz', 'EEG X2:-Pz', 'EEG F7-Pz', 'EEG F8-Pz', 'EEG X1:ECG-Pz', 'EEG A2-Pz', 'EEG T6-Pz', 'EEG T4-Pz', 'Event'].
+
+Consider using inst.rename_channels to match the montage nomenclature, or inst.set_channel_types if these are not EEG channels, or use the on_missing parameter if the channel positions are allowed to be unknown in your analyses.
+2025-04-13 00:14:11,403 - INFO - Saved figure to figures\minimal\02_raw_psd.png
+2025-04-13 00:14:11,403 - INFO - Extracting events
+2025-04-13 00:14:11,415 - INFO - Found 1198 events with 6 unique IDs
+2025-04-13 00:14:11,416 - INFO -   Event ID 1: 600 occurrences
+2025-04-13 00:14:11,416 - INFO -   Event ID 2: 196 occurrences
+2025-04-13 00:14:11,416 - INFO -   Event ID 3: 396 occurrences
+2025-04-13 00:14:11,417 - INFO -   Event ID 4: 4 occurrences
+2025-04-13 00:14:11,417 - INFO -   Event ID 8: 1 occurrences
+2025-04-13 00:14:11,417 - INFO -   Event ID 9: 1 occurrences
+2025-04-13 00:14:11,418 - INFO - Using event dictionary: {'go': 1, 'nogo': 2, 'response': 3}
+2025-04-13 00:14:31,306 - INFO - Saved figure to figures\minimal\03_events.png
+2025-04-13 00:14:31,306 - INFO - Creating epochs
+2025-04-13 00:14:31,578 - INFO - Created 1191 epochs

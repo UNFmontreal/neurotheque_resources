@@ -17,37 +17,42 @@ class SaveData(BaseStep):
     """
 
     def run(self, data):
-
         if data is None:
             raise ValueError("[SaveData] No data to save.")
 
+        sub_id = self.params.get("subject_id")
+        ses_id = self.params.get("session_id")
+        task_id = self.params.get("task_id")
+        run_id = self.params.get("run_id")
+        paths = self.params.get("paths")
         
-        sub_id = self.params["subject_id"]
-        ses_id = self.params["session_id"]
-        paths = self.params["paths"]
+        # Get the output path directly or from a specific checkpoint function
+        output_path = self.params.get("output_path")
         
-        # We'll default to "after_autoreject" if not specified
-
-    # some fallback or raise an error  
+        if output_path:
+            # Use specified output path
+            ckpt_path = Path(output_path)
+        else:
+            # Use checkpoint path from paths object
+            ckpt_path = paths.get_derivative_path(
+                subject_id=sub_id,
+                session_id=ses_id,
+                task_id=task_id,
+                run_id=run_id,
+                stage="processed"
+            )
         
-        # If "after_autoreject", we typically do "paths.get_autoreject_checkpoint(...)"
-        # but you might have multiple keys => define more in ProjectPaths if needed
-        # if ckpt_key == "after_autoreject":
-        #     ckpt_path = paths.get_autoreject_checkpoint(sub_id, ses_id)
-        # elif ckpt_key == "after_ica":
-        #     ckpt_path = paths.get_ica_checkpoint(sub_id, ses_id)
-        # else:
+        # Make sure parent directory exists
+        Path(ckpt_path).parent.mkdir(parents=True, exist_ok=True)
         
-        ckpt_path = paths.get_autoreject_checkpoint(sub_id, ses_id)
-        paths.ensure_parent(ckpt_path) 
+        # Save the data
         data.save(str(ckpt_path), overwrite=True)   
         
-        
         # If there's an autoreject log, store it in a separate .pkl
-        if "temp" in data.info and "autoreject_log" in data.info["temp"]:
-            log_path = ckpt_path.with_name(ckpt_path.stem + "_rejectlog.pkl")
+        if hasattr(data.info, 'temp') and data.info.get('temp') and "autoreject_log" in data.info["temp"]:
+            log_path = Path(ckpt_path).with_name(Path(ckpt_path).stem + "_rejectlog.pkl")
             with open(log_path, "wb") as f:
                 pickle.dump(data.info["temp"]["autoreject_log"], f)
 
-        print(f"[SaveCheckpoint] Saved => {ckpt_path}")
+        logging.info(f"Saved data to: {ckpt_path}")
         return data

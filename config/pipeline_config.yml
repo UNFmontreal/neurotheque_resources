@@ -1,0 +1,161 @@
+# NeuroTheque Pipeline Configuration
+
+# Processing Mode
+# "standard": Use checkpoints if available, otherwise start from beginning
+# "restart": Always start from beginning, ignoring checkpoints
+# "resume": Always try to find latest checkpoint and resume from there
+pipeline_mode: "standard"
+
+# Optionally start from a specific step (if not set, will use checkpoints or start from beginning)
+# start_from_step: "ICAStep"
+
+# Automatically save after each step
+auto_save: true
+
+# Directory structure (using absolute path like in single_task file)
+directory:
+  root: "e:/Yann/neurotheque_resources/"
+  raw_data_dir: "data/pilot_data/"
+  processed_dir: "data/processed"
+  reports_dir: "reports"
+  derivatives_dir: "derivatives"
+
+# File pattern for processing multiple subjects - relative to raw_data_dir
+file_path_pattern: "sub-01_ses-001_task-5pt_run-01_raw.edf"
+
+# Use the pattern below if the file is directly in raw_data_dir without subdirectories
+# file_path_pattern: "sub-01_ses-001_task-5pt_run-01_raw.edf"
+
+# Default subject/session values
+default_subject: "01"
+default_session: "001"
+default_task: "5pt"
+default_run: "01"
+
+# Pipeline configuration
+pipeline:
+  # Multi-subject processing flags (from single_task file)
+  multi_subject: true
+  multi_session: false
+  multi_task: false
+  multi_run: false
+  
+  steps:
+    - name: "LoadData"
+      params:
+        preload: true
+    
+    - name: "PrepChannelsStep"
+      params: {}
+        
+    - name: "FilterStep"
+      params:
+        l_freq: 1.0
+        h_freq: 40.0
+        notch_freqs: [60, 120]  # Added from single_task file
+        
+    # Add the EpochingStep for the 5-point test
+    - name: "EpochingStep"
+      params:
+        task_type: "5pt"
+        stim_channel: "Trigger"  # Channel containing the trigger information
+        trigger_ids:
+          trigger_id: 8  # All events have the same trigger ID (8)
+        epoch_params:
+          tmin: -0.2
+          tmax: 1.0
+          baseline: [null, 0]
+          reject_by_annotation: true
+        # Continuous task extraction options
+        extract_continuous: false  # Extract entire task segment from start to end
+        buffer_pre: 0.5  # Add 0.5s buffer before task start (set to 0 for exact start)
+        buffer_post: 0.5  # Add 0.5s buffer after task end (set to 0 for exact end)
+        add_annotations: False  # Add annotations for task segments and events
+        returns_epochs: True  # Return raw data instead of epochs
+        
+    # First AutoReject step to identify bad epochs (but not remove them yet)
+    - name: "AutoRejectStep"
+      params:
+        ar_params:
+          # Using bayesian optimization approach
+          consensus: null
+          n_interpolate: null 
+          random_state: null
+          thresh_method: 'bayesian_optimization'
+        plot_results: true
+        # First pass just identifies bad epochs but doesn't remove them
+        mode: "fit"  # Only identify bad epochs, don't transform/clean
+            
+    # Alternate EpochingStep configuration for fixed-length epochs:
+    # - name: "EpochingStep"
+    #   params:
+    #     task_type: "fixed"
+    #     stim_channel: "Trigger"
+    #     epoch_params:
+    #       duration: 1.0      # Length of each epoch in seconds
+    #       overlap: 0.5       # 50% overlap between epochs
+    #       baseline: null     # No baseline correction
+    #       preload: true
+    #     extract_continuous: true  # Only create epochs within the task segment
+    #     buffer_pre: 0.0      # No buffer before task start
+    #     buffer_post: 0.0     # No buffer after task end
+    #     returns_epochs: true # Return epochs object
+        
+    - name: "ICAStep"
+      params:
+        n_components: 'all'  # Can be a number (e.g., 15) or 'all' to extract all available components
+        method: "infomax"
+        max_iter: 2000
+        fit_params:
+          extended: true
+          l_rate: 0.001
+        decim: 3
+        use_good_epochs_only: true  # Use only good epochs for ICA calculation
+        eog_ch_names: []
+        eog_threshold: 0.5
+        ecg_channel: null
+        ecg_threshold: 0.3
+        exclude: []
+        plot_components: true
+        plot_sources: true
+        interactive: true
+    
+    # Final AutoReject step for removing bad epochs after ICA
+    - name: "AutoRejectStep"
+      params:
+        ar_params:
+          consensus: null
+          n_interpolate: null 
+          random_state: null
+          thresh_method: 'bayesian_optimization'
+        plot_results: true
+        # This is the final cleaning, so we want to actually remove the bad epochs
+        mode: "fit_transform"  # Apply the rejection, not just identify
+        # Save with a more descriptive name
+        save_cleaned_data: true
+        file_prefix: "fully_cleaned"
+        output_dir: "data/processed/sub-01/ses-001"
+        
+    # Added SplitTasksStep from single_task file
+    - name: "SplitTasksStep"
+      params:
+        tasks:
+          - name: "rest"
+            start_trigger: 6
+            end_trigger: 7
+
+          - name: "gng_image"
+            start_trigger: 7
+            end_trigger: 9
+
+          - name: "mental_imagery"
+            start_trigger: 8
+            end_trigger: 9
+            occurrence_index: 2
+
+          - name: "landoitc"
+            start_after_task: "gng_image"
+            start_offset_minutes: 14
+            end_before_trigger: 6
+            end_before_occurrence_index: 2
+            end_offset_minutes: 1 

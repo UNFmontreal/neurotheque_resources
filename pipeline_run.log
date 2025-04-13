@@ -1,0 +1,198 @@
+2025-04-11 17:59:03,322 - root - INFO - [__init__.py] All step classes have been registered in STEP_REGISTRY.
+2025-04-11 17:59:03,324 - root - INFO - Starting EEG preprocessing pipeline
+2025-04-11 17:59:03,338 - root - INFO - Running pipeline with configuration from config/pipeline_config.yml
+2025-04-11 17:59:03,339 - root - INFO - Running pipeline in mode: standard
+2025-04-11 17:59:03,339 - root - INFO - Looking for files matching pattern: E:\Yann\neurotheque_resources\data\pilot_data\sub-01_ses-001_task-5pt_run-01_raw.edf
+2025-04-11 17:59:03,340 - root - INFO - Found 1 files to process
+2025-04-11 17:59:03,341 - root - INFO - Processing file: E:\Yann\neurotheque_resources\data\pilot_data\sub-01_ses-001_task-5pt_run-01_raw.edf
+2025-04-11 17:59:03,343 - root - INFO - No checkpoints found for sub-01_ses-001_task-5pt_run-01
+2025-04-11 17:59:03,344 - root - INFO - No checkpoint found or continuing from start. Starting from scratch.
+2025-04-11 17:59:03,344 - root - INFO - Running step 0: LoadData
+2025-04-11 17:59:03,521 - root - INFO - Step LoadData completed successfully
+2025-04-11 17:59:03,522 - root - INFO - [AutoSave] Saving data after loaddata step to: E:\Yann\neurotheque_resources\data\processed\sub-01\ses-001\sub-01_ses-001_task-5pt_run-01_after_loaddata.fif
+2025-04-11 17:59:04,037 - root - INFO - Auto-saved after step LoadData
+2025-04-11 17:59:04,038 - root - INFO - Running step 1: PrepChannelsStep
+2025-04-11 17:59:04,044 - root - INFO - Dropped non-EEG: ['EEG X1:-Pz', 'EEG X2:-Pz', 'EEG X3:-Pz', 'CM', 'EEG A1-Pz', 'EEG A2-Pz', 'Event']
+2025-04-11 17:59:04,073 - root - INFO - [PrepChannelsStep] Channels prepared successfully.
+2025-04-11 17:59:04,074 - root - INFO - Step PrepChannelsStep completed successfully
+2025-04-11 17:59:04,074 - root - INFO - [AutoSave] Saving data after prepchannels step to: E:\Yann\neurotheque_resources\data\processed\sub-01\ses-001\sub-01_ses-001_task-5pt_run-01_after_prepchannels.fif
+2025-04-11 17:59:04,340 - root - INFO - Auto-saved after step PrepChannelsStep
+2025-04-11 17:59:04,340 - root - INFO - Running step 2: FilterStep
+2025-04-11 17:59:04,469 - root - INFO - Step FilterStep completed successfully
+2025-04-11 17:59:04,472 - root - INFO - [AutoSave] Saving data after filter step to: E:\Yann\neurotheque_resources\data\processed\sub-01\ses-001\sub-01_ses-001_task-5pt_run-01_after_filter.fif
+2025-04-11 17:59:04,750 - root - INFO - Auto-saved after step FilterStep
+2025-04-11 17:59:04,751 - root - INFO - Running step 3: EpochingStep
+2025-04-11 17:59:04,751 - root - INFO - [EpochingStep] Epoching 5-point test data using pattern-based approach
+2025-04-11 17:59:04,755 - root - INFO - [EpochingStep] Found 168 total events
+2025-04-11 17:59:04,756 - root - INFO - [EpochingStep] Start event at 10.08s, End event at 304.10s
+2025-04-11 17:59:04,764 - root - ERROR - Error executing step EpochingStep: cannot access local variable 'onset_events' where it is not associated with a value
+2025-04-11 17:59:04,765 - root - ERROR - Error running pipeline: cannot access local variable 'onset_events' where it is not associated with a value
+Traceback (most recent call last):
+  File "E:\Yann\neurotheque_resources\run_pipeline.py", line 47, in main
+    pipeline.run()
+  File "E:\Yann\neurotheque_resources\scr\pipeline.py", line 161, in run
+    self._run_steps(steps_def, skip_index, sub_id, ses_id, run_id, file_path, task_id)
+  File "E:\Yann\neurotheque_resources\scr\pipeline.py", line 205, in _run_steps
+    self._run_step(step_info)
+  File "E:\Yann\neurotheque_resources\scr\pipeline.py", line 291, in _run_step
+    self.data = step.run(self.data)
+                ^^^^^^^^^^^^^^^^^^^
+  File "E:\Yann\neurotheque_resources\scr\steps\epoching.py", line 67, in run
+    return self._epoch_five_point_test(data, trigger_ids, tmin, tmax, baseline, preload,
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "E:\Yann\neurotheque_resources\scr\steps\epoching.py", line 181, in _epoch_five_point_test
+    for onset_evt, response_evt in zip(onset_events, response_events):
+                                       ^^^^^^^^^^^^
+UnboundLocalError: cannot access local variable 'onset_events' where it is not associated with a value
+2025-04-11 18:00:20,739 - root - INFO - [__init__.py] All step classes have been registered in STEP_REGISTRY.
+2025-04-11 18:00:20,749 - root - INFO - Starting EEG preprocessing pipeline
+2025-04-11 18:00:20,757 - root - INFO - Running pipeline with configuration from config/pipeline_config.yml
+2025-04-11 18:00:20,765 - root - INFO - Running pipeline in mode: standard
+2025-04-11 18:00:20,765 - root - INFO - Looking for files matching pattern: E:\Yann\neurotheque_resources\data\pilot_data\sub-01_ses-001_task-5pt_run-01_raw.edf
+2025-04-11 18:00:20,765 - root - INFO - Found 1 files to process
+2025-04-11 18:00:20,767 - root - INFO - Processing file: E:\Yann\neurotheque_resources\data\pilot_data\sub-01_ses-001_task-5pt_run-01_raw.edf
+2025-04-11 18:00:20,769 - root - INFO - Found latest checkpoint: E:\Yann\neurotheque_resources\data\processed\sub-01\ses-001\sub-01_ses-001_task-5pt_run-01_after_filter.fif
+2025-04-11 18:00:20,769 - root - INFO - Found existing checkpoint => E:\Yann\neurotheque_resources\data\processed\sub-01\ses-001\sub-01_ses-001_task-5pt_run-01_after_filter.fif
+2025-04-11 18:00:20,769 - root - INFO - Last completed step: filter
+2025-04-11 18:00:20,769 - root - INFO - Will resume after step FilterStep (index 2)
+2025-04-11 18:00:20,813 - root - INFO - Checkpoint loaded successfully.
+2025-04-11 18:00:20,813 - root - INFO - Skipping step 0: LoadData
+2025-04-11 18:00:20,816 - root - INFO - Skipping step 1: PrepChannelsStep
+2025-04-11 18:00:20,816 - root - INFO - Skipping step 2: FilterStep
+2025-04-11 18:00:20,817 - root - INFO - Running step 3: EpochingStep
+2025-04-11 18:00:20,818 - root - INFO - [EpochingStep] Epoching 5-point test data using pattern-based approach
+2025-04-11 18:00:20,821 - root - INFO - [EpochingStep] Found 168 total events
+2025-04-11 18:00:20,823 - root - INFO - [EpochingStep] Start event at 10.08s, End event at 304.10s
+2025-04-11 18:00:20,835 - root - ERROR - Error executing step EpochingStep: orig_time should be the same to add/concatenate 2 annotations (got 2025-03-26 12:12:24+00:00 != None)
+2025-04-11 18:00:20,835 - root - ERROR - Error running pipeline: orig_time should be the same to add/concatenate 2 annotations (got 2025-03-26 12:12:24+00:00 != None)
+Traceback (most recent call last):
+  File "E:\Yann\neurotheque_resources\run_pipeline.py", line 47, in main
+    pipeline.run()
+  File "E:\Yann\neurotheque_resources\scr\pipeline.py", line 161, in run
+    self._run_steps(steps_def, skip_index, sub_id, ses_id, run_id, file_path, task_id)
+  File "E:\Yann\neurotheque_resources\scr\pipeline.py", line 205, in _run_steps
+    self._run_step(step_info)
+  File "E:\Yann\neurotheque_resources\scr\pipeline.py", line 291, in _run_step
+    self.data = step.run(self.data)
+                ^^^^^^^^^^^^^^^^^^^
+  File "E:\Yann\neurotheque_resources\scr\steps\epoching.py", line 67, in run
+    return self._epoch_five_point_test(data, trigger_ids, tmin, tmax, baseline, preload,
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "E:\Yann\neurotheque_resources\scr\steps\epoching.py", line 220, in _epoch_five_point_test
+    data_cropped.set_annotations(data_cropped.annotations + onset_annot + response_annot)
+                                 ~~~~~~~~~~~~~~~~~~~~~~~~~^~~~~~~~~~~~~
+  File "C:\Users\snesm\anaconda3\envs\neuropipe\Lib\site-packages\mne\annotations.py", line 326, in __add__
+    out += other
+  File "C:\Users\snesm\anaconda3\envs\neuropipe\Lib\site-packages\mne\annotations.py", line 337, in __iadd__
+    raise ValueError(
+ValueError: orig_time should be the same to add/concatenate 2 annotations (got 2025-03-26 12:12:24+00:00 != None)
+2025-04-11 18:00:47,165 - root - INFO - [__init__.py] All step classes have been registered in STEP_REGISTRY.
+2025-04-11 18:00:47,167 - root - INFO - Starting EEG preprocessing pipeline
+2025-04-11 18:00:47,180 - root - INFO - Running pipeline with configuration from config/pipeline_config.yml
+2025-04-11 18:00:47,181 - root - INFO - Running pipeline in mode: standard
+2025-04-11 18:00:47,182 - root - INFO - Looking for files matching pattern: E:\Yann\neurotheque_resources\data\pilot_data\sub-01_ses-001_task-5pt_run-01_raw.edf
+2025-04-11 18:00:47,183 - root - INFO - Found 1 files to process
+2025-04-11 18:00:47,183 - root - INFO - Processing file: E:\Yann\neurotheque_resources\data\pilot_data\sub-01_ses-001_task-5pt_run-01_raw.edf
+2025-04-11 18:00:47,185 - root - INFO - Found latest checkpoint: E:\Yann\neurotheque_resources\data\processed\sub-01\ses-001\sub-01_ses-001_task-5pt_run-01_after_filter.fif
+2025-04-11 18:00:47,185 - root - INFO - Found existing checkpoint => E:\Yann\neurotheque_resources\data\processed\sub-01\ses-001\sub-01_ses-001_task-5pt_run-01_after_filter.fif
+2025-04-11 18:00:47,185 - root - INFO - Last completed step: filter
+2025-04-11 18:00:47,186 - root - INFO - Will resume after step FilterStep (index 2)
+2025-04-11 18:00:47,218 - root - INFO - Checkpoint loaded successfully.
+2025-04-11 18:00:47,219 - root - INFO - Skipping step 0: LoadData
+2025-04-11 18:00:47,219 - root - INFO - Skipping step 1: PrepChannelsStep
+2025-04-11 18:00:47,219 - root - INFO - Skipping step 2: FilterStep
+2025-04-11 18:00:47,219 - root - INFO - Running step 3: EpochingStep
+2025-04-11 18:00:47,220 - root - INFO - [EpochingStep] Epoching 5-point test data using pattern-based approach
+2025-04-11 18:00:47,224 - root - INFO - [EpochingStep] Found 168 total events
+2025-04-11 18:00:47,224 - root - INFO - [EpochingStep] Start event at 10.08s, End event at 304.10s
+2025-04-11 18:00:47,248 - root - INFO - [EpochingStep] Extracted continuous segment from 9.58s to 304.60s
+2025-04-11 18:00:47,249 - root - INFO - [EpochingStep] Task duration: 294.02s with 83 trials
+2025-04-11 18:00:47,250 - root - INFO - Step EpochingStep completed successfully
+2025-04-11 18:00:47,252 - root - INFO - [AutoSave] Saving data after epoching step to: E:\Yann\neurotheque_resources\data\processed\sub-01\ses-001\sub-01_ses-001_task-5pt_run-01_after_epoching.fif
+2025-04-11 18:00:47,630 - root - INFO - Auto-saved after step EpochingStep
+2025-04-11 18:00:47,630 - root - INFO - Running step 4: AutoRejectStep
+2025-04-11 18:00:47,631 - root - INFO - [AutoRejectStep] Creating 1-second epochs for AR fitting.
+2025-04-11 18:00:47,877 - root - INFO - [AutoRejectStep] Running AutoReject with params: {'consensus': None, 'n_interpolate': None, 'random_state': None, 'thresh_method': 'bayesian_optimization'}
+2025-04-11 18:01:35,675 - root - INFO - [AutoRejectStep] Applying AutoReject to clean the data
+2025-04-11 18:01:40,829 - root - INFO - [AutoRejectStep] AutoReject rejected 41 epochs out of 295 (13.9%)
+2025-04-11 18:01:41,351 - root - INFO - Step AutoRejectStep completed successfully
+2025-04-11 18:01:41,352 - root - INFO - [AutoSave] Saving data after autoreject step to: E:\Yann\neurotheque_resources\data\processed\sub-01\ses-001\sub-01_ses-001_task-5pt_run-01_after_autoreject.fif
+2025-04-11 18:01:41,588 - root - INFO - Auto-saved after step AutoRejectStep
+2025-04-11 18:01:41,589 - root - INFO - Running step 5: ICAStep
+2025-04-11 18:01:41,805 - root - INFO - [ICAStep] Using data with AutoReject annotations to exclude bad segments.
+2025-04-11 18:01:41,805 - root - INFO - [ICAStep] Found 41 'BAD_autoreject' annotations
+2025-04-11 18:01:41,845 - root - INFO - [ICAStep] Created 223 epochs, excluding segments with bad annotations
+2025-04-11 18:01:41,847 - root - ERROR - Error executing step ICAStep: ica.n_components (20) cannot be greater than len(picks) (18)
+2025-04-11 18:01:41,847 - root - ERROR - Error running pipeline: ica.n_components (20) cannot be greater than len(picks) (18)
+Traceback (most recent call last):
+  File "E:\Yann\neurotheque_resources\run_pipeline.py", line 47, in main
+    pipeline.run()
+  File "E:\Yann\neurotheque_resources\scr\pipeline.py", line 161, in run
+    self._run_steps(steps_def, skip_index, sub_id, ses_id, run_id, file_path, task_id)
+  File "E:\Yann\neurotheque_resources\scr\pipeline.py", line 205, in _run_steps
+    self._run_step(step_info)
+  File "E:\Yann\neurotheque_resources\scr\pipeline.py", line 291, in _run_step
+    self.data = step.run(self.data)
+                ^^^^^^^^^^^^^^^^^^^
+  File "E:\Yann\neurotheque_resources\scr\steps\ica.py", line 158, in run
+    ica.fit(
+  File "<decorator-gen-300>", line 12, in fit
+  File "C:\Users\snesm\anaconda3\envs\neuropipe\Lib\site-packages\mne\preprocessing\ica.py", line 724, in fit
+    raise ValueError(
+ValueError: ica.n_components (20) cannot be greater than len(picks) (18)
+2025-04-11 18:02:06,047 - root - INFO - [__init__.py] All step classes have been registered in STEP_REGISTRY.
+2025-04-11 18:02:06,049 - root - INFO - Starting EEG preprocessing pipeline
+2025-04-11 18:02:06,064 - root - INFO - Running pipeline with configuration from config/pipeline_config.yml
+2025-04-11 18:02:06,064 - root - INFO - Running pipeline in mode: standard
+2025-04-11 18:02:06,065 - root - INFO - Looking for files matching pattern: E:\Yann\neurotheque_resources\data\pilot_data\sub-01_ses-001_task-5pt_run-01_raw.edf
+2025-04-11 18:02:06,066 - root - INFO - Found 1 files to process
+2025-04-11 18:02:06,066 - root - INFO - Processing file: E:\Yann\neurotheque_resources\data\pilot_data\sub-01_ses-001_task-5pt_run-01_raw.edf
+2025-04-11 18:02:06,068 - root - INFO - Found latest checkpoint: E:\Yann\neurotheque_resources\data\processed\sub-01\ses-001\sub-01_ses-001_task-5pt_run-01_after_autoreject.fif
+2025-04-11 18:02:06,068 - root - INFO - Found existing checkpoint => E:\Yann\neurotheque_resources\data\processed\sub-01\ses-001\sub-01_ses-001_task-5pt_run-01_after_autoreject.fif
+2025-04-11 18:02:06,068 - root - INFO - Last completed step: autoreject
+2025-04-11 18:02:06,068 - root - INFO - Will resume after step AutoRejectStep (index 4)
+2025-04-11 18:02:06,118 - root - INFO - Checkpoint loaded successfully.
+2025-04-11 18:02:06,119 - root - INFO - Skipping step 0: LoadData
+2025-04-11 18:02:06,119 - root - INFO - Skipping step 1: PrepChannelsStep
+2025-04-11 18:02:06,119 - root - INFO - Skipping step 2: FilterStep
+2025-04-11 18:02:06,120 - root - INFO - Skipping step 3: EpochingStep
+2025-04-11 18:02:06,120 - root - INFO - Skipping step 4: AutoRejectStep
+2025-04-11 18:02:06,120 - root - INFO - Running step 5: ICAStep
+2025-04-11 18:02:06,291 - root - INFO - [ICAStep] Using data with AutoReject annotations to exclude bad segments.
+2025-04-11 18:02:06,292 - root - INFO - [ICAStep] Found 41 'BAD_autoreject' annotations
+2025-04-11 18:02:06,332 - root - INFO - [ICAStep] Created 201 epochs, excluding segments with bad annotations
+2025-04-11 18:02:49,514 - root - INFO - [ICAStep] Final exclusion list: [1]
+2025-04-11 18:02:50,033 - root - INFO - [ICAStep] Saved ICA-cleaned data to E:\Yann\neurotheque_resources\data\processed\sub-01\ses-001\sub-01_ses-001.fif\sub-01_ses-001_desc-ica_cleaned.fif
+2025-04-11 18:03:12,354 - root - INFO - [ICAStep] ICA report saved at E:\Yann\neurotheque_resources\reports\ica\01\001\ica_report.html
+2025-04-11 18:03:12,354 - root - INFO - [ICAStep] Running ICLabel classification
+2025-04-11 18:03:13,307 - root - WARNING - [ICAStep] ICLabel classification failed: Missing optional dependency. ICLabel requires either pytorch or onnxruntime. Use pip or conda to install one of them.
+2025-04-11 18:03:14,182 - root - INFO - [ICAStep] Saved component overview to E:\Yann\neurotheque_resources\reports\ica\01\001\figures\ica_components_overview.png
+2025-04-11 18:03:39,948 - root - INFO - [ICAStep] Saved detailed plots for 15 components to E:\Yann\neurotheque_resources\reports\ica\01\001\components
+2025-04-11 18:03:39,954 - root - INFO - [ICAStep] Saved component summary to E:\Yann\neurotheque_resources\reports\ica\01\001\ica_component_summary.txt
+2025-04-11 18:03:39,958 - root - INFO - [ICAStep] Saved README to E:\Yann\neurotheque_resources\reports\ica\01\001\README.md
+2025-04-11 18:03:39,958 - root - INFO - Step ICAStep completed successfully
+2025-04-11 18:03:39,959 - root - INFO - [AutoSave] Saving data after ica step to: E:\Yann\neurotheque_resources\data\processed\sub-01\ses-001\sub-01_ses-001_task-5pt_run-01_after_ica.fif
+2025-04-11 18:03:40,214 - root - INFO - Auto-saved after step ICAStep
+2025-04-11 18:03:40,214 - root - INFO - Running step 6: AutoRejectStep
+2025-04-11 18:03:40,215 - root - INFO - [AutoRejectStep] Creating 1-second epochs for AR fitting.
+2025-04-11 18:03:40,389 - root - INFO - [AutoRejectStep] Running AutoReject with params: {'consensus': None, 'n_interpolate': None, 'random_state': None, 'thresh_method': 'bayesian_optimization'}
+2025-04-11 18:04:10,248 - root - INFO - [AutoRejectStep] Applying AutoReject to clean the data
+2025-04-11 18:04:13,526 - root - INFO - [AutoRejectStep] AutoReject rejected 7 epochs out of 201 (3.5%)
+2025-04-11 18:04:13,895 - root - INFO - Step AutoRejectStep completed successfully
+2025-04-11 18:04:13,896 - root - INFO - [AutoSave] Saving data after autoreject step to: E:\Yann\neurotheque_resources\data\processed\sub-01\ses-001\sub-01_ses-001_task-5pt_run-01_after_autoreject.fif
+2025-04-11 18:04:14,150 - root - INFO - Auto-saved after step AutoRejectStep
+2025-04-11 18:04:14,150 - root - INFO - Running step 7: SplitTasksStep
+2025-04-11 18:04:14,152 - root - INFO - [SplitTasksStep] Found 168 events in the data.
+2025-04-11 18:04:14,152 - root - ERROR - rest: Missing or insufficient occurrences of start_trigger=6.
+2025-04-11 18:04:14,152 - root - WARNING - [SplitTasksStep] rest: Could not define segment. Skipping.
+2025-04-11 18:04:14,152 - root - ERROR - gng_image: Missing or insufficient occurrences of start_trigger=7.
+2025-04-11 18:04:14,152 - root - WARNING - [SplitTasksStep] gng_image: Could not define segment. Skipping.
+2025-04-11 18:04:14,152 - root - ERROR - mental_imagery: Missing or insufficient occurrences of end_trigger=9.
+2025-04-11 18:04:14,152 - root - WARNING - [SplitTasksStep] mental_imagery: Could not define segment. Skipping.
+2025-04-11 18:04:14,156 - root - ERROR - landoitc: The referenced task 'gng_image' isn't defined yet.
+2025-04-11 18:04:14,156 - root - WARNING - [SplitTasksStep] landoitc: Could not define segment. Skipping.
+2025-04-11 18:04:14,156 - root - INFO - Step SplitTasksStep completed successfully
+2025-04-11 18:04:14,157 - root - INFO - [AutoSave] Saving data after splittasks step to: E:\Yann\neurotheque_resources\data\processed\sub-01\ses-001\sub-01_ses-001_task-5pt_run-01_after_splittasks.fif
+2025-04-11 18:04:14,412 - root - INFO - Auto-saved after step SplitTasksStep
+2025-04-11 18:04:14,412 - root - INFO - [SUCCESS] Pipeline completed (multi-subject).
+2025-04-11 18:04:14,412 - root - INFO - Pipeline completed successfully

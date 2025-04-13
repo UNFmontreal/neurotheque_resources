@@ -29,10 +29,12 @@ This repository is designed for both single-subject and multi-subject pipelines,
 1. [Repository Structure](#repository-structure)  
 2. [Installation & Quick Start](#installation--quick-start)  
 3. [Usage Examples](#usage-examples)  
-4. [Contributors & Acknowledgments](#contributors--acknowledgments)  
-5. [Contributing](#contributing)  
-6. [License](#license)  
-7. [Contact](#contact)
+4. [Direct Step Usage](#direct-step-usage)  
+5. [Testing](#testing)  
+6. [Contributors & Acknowledgments](#contributors--acknowledgments)  
+7. [Contributing](#contributing)  
+8. [License](#license)  
+9. [Contact](#contact)
 
 ## Repository Structure
 
@@ -50,6 +52,10 @@ This repository is designed for both single-subject and multi-subject pipelines,
 - **doc/** – Additional documentation, user guides, or methodology reports.
 
 - **configs/** – YAML files detailing pipeline configurations (e.g., `pilot_preprocessing_strategy.yml`, `gonogo_analysis.yml`, etc.).
+
+- **tests/** – Comprehensive test suite for all components of the pipeline.
+  - **unit/** – Tests for individual steps and utility functions.
+  - **integration/** – Tests for complete workflows and pipeline configurations.
 
 ---
 
@@ -84,7 +90,106 @@ This repository is designed for both single-subject and multi-subject pipelines,
 
     run_finger_tapping_pipeline(input_path, output_path)
     ```
-3. **Explore the Jupyter Notebooks**    
+3. **Explore the Jupyter Notebooks**
 
-  ---
+## Direct Step Usage
+
+Each processing step in the Neurotheque pipeline can be used independently on MNE data objects, allowing for flexible integration into your custom workflows.
+
+### Basic Pattern
+
+```python
+from scr.steps.filter import FilterStep
+
+# Configure parameters
+filter_params = {
+    "l_freq": 1.0,        # High-pass frequency (Hz)
+    "h_freq": 40.0,       # Low-pass frequency (Hz)
+    "notch_freqs": [50]   # Optional notch filter frequencies (Hz)
+}
+
+# Initialize the step
+filter_step = FilterStep(filter_params)
+
+# Run it on your MNE data
+filtered_data = filter_step.run(your_mne_raw_data)
+```
+
+### Complete Example
+
+Here's a simplified workflow example directly using the processing steps:
+
+```python
+import mne
+from scr.steps.load import LoadData
+from scr.steps.filter import FilterStep
+from scr.steps.autoreject import AutoRejectStep
+from scr.steps.epoching import EpochingStep
+
+# Load data
+load_step = LoadData({"input_file": "your_data.fif"})
+raw_data = load_step.run(None)
+
+# Apply filters
+filter_step = FilterStep({"l_freq": 1.0, "h_freq": 40.0})
+filtered_data = filter_step.run(raw_data)
+
+# Apply AutoReject for artifact detection
+ar_step = AutoRejectStep({"mode": "fit", "plot_results": True})
+ar_data = ar_step.run(filtered_data)
+
+# Create epochs
+events = mne.find_events(ar_data)
+epoch_step = EpochingStep({
+    "tmin": -0.2, "tmax": 0.5, 
+    "baseline": (None, 0),
+    "event_id": {"1": 1}
+})
+epochs = epoch_step.run(ar_data)
+
+print(f"Created {len(epochs)} clean epochs")
+```
+
+For detailed examples of direct step usage, see:
+- [Direct Step Usage Guide](docs/direct_step_usage.md)
+- [Example Script](example_direct_step_usage.py)
+
+## Testing
+
+The Neurotheque pipeline includes a comprehensive test suite to ensure reliability and robustness. The tests are organized into unit tests (for individual components) and integration tests (for workflows and complete pipelines).
+
+### Installing Development Dependencies
+
+To run tests, first install the development dependencies:
+
+```bash
+pip install -r requirements-dev.txt
+```
+
+### Running Tests
+
+The test runner script provides several options:
+
+```bash
+# Run all tests
+python run_tests.py
+
+# Run only unit tests
+python run_tests.py --unit
+
+# Run only integration tests
+python run_tests.py --integration
+
+# Run tests with coverage reporting
+python run_tests.py --coverage
+
+# Generate HTML coverage report
+python run_tests.py --html
+```
+
+### Test Documentation
+
+For detailed information about the test suite, including how to add new tests, see the [tests/README.md](tests/README.md) file.
+
+---
 
