@@ -126,13 +126,29 @@ class EpochingStep(BaseStep):
         
         # Visualize the detected events to verify correct detection
         if self.params.get("visualize_events", False):
-            fig = self.plot_events_simple(data, events, stim_channel)
+            # Get visualization parameters
+            plot_params = self.params.get("plot_params", {})
+            duration = plot_params.get("duration", 10.0)  # Default: 10s window
+            tstart = plot_params.get("tstart", 0.0)       # Default: start at 0s
+            interactive = plot_params.get("interactive", False)  # Default: non-interactive
+            save_fig = {
+                'save': plot_params.get("save_plots", False),
+                'dir': plot_params.get("save_dir", "figures/events")
+            }
+            
+            # Use the simple plot function with new parameters
+            fig = self.plot_events_simple(
+                data, 
+                events, 
+                stim_channel,
+                duration=duration,
+                tstart=tstart,
+                save_fig=save_fig,
+                interactive=interactive
+            )
+            
             if fig:
-                logging.info("[EpochingStep] Simple event visualization created")
-                # Save the figure if requested
-                if self.params.get("plot_params", {}).get("save_plots", False):
-                    save_dir = self.params.get("plot_params", {}).get("save_dir", "figures/events")
-                    self._save_figures(fig, save_dir)
+                logging.info(f"[EpochingStep] Simple event visualization created: {duration}s window from {tstart}s")
         
         return result
 
@@ -1060,7 +1076,8 @@ class EpochingStep(BaseStep):
         else:
             return figures
 
-    def plot_events_simple(self, raw, events, stim_channel=None):
+    def plot_events_simple(self, raw, events, stim_channel=None, duration=10.0, 
+                            tstart=0, save_fig=None, interactive=False):
         """
         Simple visualization of trigger channel and detected events.
         
@@ -1072,6 +1089,17 @@ class EpochingStep(BaseStep):
             Events array from mne.find_events
         stim_channel : str or None
             Name of the stim channel (if None, use the one from params)
+        duration : float
+            Duration in seconds to display (default: 10s)
+        tstart : float
+            Start time in seconds for the visualization window (default: 0)
+        save_fig : dict or None
+            Dictionary with parameters for saving the figure:
+            - 'save': bool, whether to save the figure
+            - 'dir': str, directory to save the figure in
+            - 'fname': str, filename to use (without extension)
+        interactive : bool
+            If True, uses interactive plotting for notebooks (default: False)
             
         Returns:
         --------
@@ -1080,6 +1108,7 @@ class EpochingStep(BaseStep):
         """
         import matplotlib.pyplot as plt
         import numpy as np
+        from pathlib import Path
         
         # Get stim channel if not provided
         if stim_channel is None:
@@ -1090,10 +1119,26 @@ class EpochingStep(BaseStep):
             logging.warning(f"[EpochingStep] Stim channel {stim_channel} not found in raw data")
             return None
         
-        # Get the stim channel data
+        # Calculate sample range based on duration
+        sfreq = raw.info['sfreq']
+        tmax = tstart + duration
+        start_sample = int(tstart * sfreq)
+        end_sample = int(tmax * sfreq)
+        
+        # Ensure we don't exceed data boundaries
+        start_sample = max(0, start_sample)
+        end_sample = min(len(raw.times), end_sample)
+        
+        # Get the stim channel data for the specified duration
         pick_idx = raw.ch_names.index(stim_channel)
-        stim_data, times = raw[pick_idx, :]
+        stim_data, times = raw[pick_idx, start_sample:end_sample]
         stim_data = stim_data.flatten()
+        
+        # Configure interactive mode if requested
+        if interactive:
+            plt.ion()  # Turn on interactive mode
+        else:
+            plt.ioff()  # Make sure interactive mode is off
         
         # Create a simple figure
         fig, ax = plt.subplots(figsize=(12, 6))
@@ -1101,43 +1146,104 @@ class EpochingStep(BaseStep):
         # Plot trigger channel
         ax.plot(times, stim_data, 'k-', linewidth=1, label='Trigger Channel')
         
-        # Mark events with vertical lines
         # Adjust for raw.first_samp to align events with times
         event_times = (events[:, 0] - raw.first_samp) / raw.info['sfreq']
         event_values = events[:, 2]
         
-        # Log first few events for debugging
-        logging.info(f"[EpochingStep] First few events (adjusted for first_samp={raw.first_samp}):")
-        for i in range(min(5, len(events))):
-            logging.info(f"  Event {i}: ID={events[i, 2]}, time={event_times[i]:.3f}s, sample={events[i, 0]}")
+        # Filter events to visible time range
+        mask = (event_times >= tstart) & (event_times <= tmax)
+        visible_events = events[mask]
+        visible_times = event_times[mask]
+        visible_values = event_values[mask]
+        
+        # Log visible events for debugging
+        logging.info(f"[EpochingStep] Showing {len(visible_events)} events in time window [{tstart:.1f}, {tmax:.1f}]s")
+        for i in range(min(5, len(visible_events))):
+            logging.info(f"  Event {i}: ID={visible_events[i, 2]}, time={visible_times[i]:.3f}s, sample={visible_events[i, 0]}")
         
         # Get unique event values
-        unique_values = np.unique(event_values)
+        unique_values = np.unique(visible_values) if len(visible_values) > 0 else np.unique(event_values)
         colors = plt.cm.tab10(np.linspace(0, 1, len(unique_values)))
         
         # Plot each event type
         for i, val in enumerate(unique_values):
             # Find events with this value
-            mask = event_values == val
+            mask = visible_values == val if len(visible_values) > 0 else event_values == val
             if np.sum(mask) > 0:
-                ev_times = event_times[mask]
+                ev_times = visible_times[mask] if len(visible_values) > 0 else event_times[mask]
                 # Plot vertical lines for these events
                 for t in ev_times:
-                    ax.axvline(t, color=colors[i], linestyle='--', alpha=0.7)
+                    if tstart <= t <= tmax:  # Double-check time is in range
+                        ax.axvline(t, color=colors[i], linestyle='--', alpha=0.7)
                 # Add one point for the legend
-                ax.plot([], [], color=colors[i], linestyle='--', label=f'Event ID: {val} (n={np.sum(mask)})')
+                ax.plot([], [], color=colors[i], linestyle='--', 
+                       label=f'Event ID: {val} (n={np.sum(mask)})')
         
         # Add labels and legend
         ax.set_xlabel('Time (s)')
         ax.set_ylabel('Amplitude')
-        ax.set_title(f'Trigger Channel ({stim_channel}) and Detected Events')
+        ax.set_title(f'Trigger Channel ({stim_channel}) - {duration}s window from {tstart}s to {tmax}s')
         ax.legend(loc='upper right')
+        
+        # Set x-axis limits to match the requested time window
+        ax.set_xlim(times[0], times[-1])
         
         # Add text showing raw.first_samp for clarity
         plt.figtext(0.02, 0.02, f"raw.first_samp = {raw.first_samp}", fontsize=8,
                    bbox=dict(facecolor='white', alpha=0.8))
         
         plt.tight_layout()
+        
+        # Save figure if requested
+        if save_fig is not None and save_fig.get('save', False):
+            save_dir = save_fig.get('dir', 'figures/events')
+            
+            # Use paths from params if available
+            paths = self.params.get("paths", None)
+            if paths is not None and save_dir == 'figures/events':
+                sub_id = self.params.get("subject_id", "unknown")
+                ses_id = self.params.get("session_id", "001")
+                task_id = self.params.get("task_id", None)
+                run_id = self.params.get("run_id", None)
+                
+                save_dir = paths.get_derivative_path(
+                    subject_id=sub_id,
+                    session_id=ses_id,
+                    task_id=task_id,
+                    run_id=run_id,
+                    stage="figures/events"
+                )
+            
+            # Create filename
+            if 'fname' in save_fig:
+                filename = save_fig['fname']
+            else:
+                # Create a default filename
+                sub_id = self.params.get("subject_id", "unknown")
+                ses_id = self.params.get("session_id", "001")
+                task_id = self.params.get("task_id", None)
+                run_id = self.params.get("run_id", None)
+                
+                filename = f"sub-{sub_id}_ses-{ses_id}"
+                if task_id:
+                    filename += f"_task-{task_id}"
+                if run_id:
+                    filename += f"_run-{run_id}"
+                filename += f"_events_{tstart}to{tmax}s"
+            
+            # Ensure directory exists
+            save_path = Path(save_dir)
+            save_path.mkdir(parents=True, exist_ok=True)
+            
+            # Save figure
+            filepath = save_path / f"{filename}.png"
+            fig.savefig(filepath, dpi=300, bbox_inches='tight')
+            logging.info(f"[EpochingStep] Saved event visualization to {filepath}")
+        
+        # Show the figure if interactive mode is on
+        if interactive:
+            plt.show()
+            
         return fig
 
     def _save_figures(self, figures, save_dir=None):

@@ -129,6 +129,26 @@ class ProjectPaths:
         path.mkdir(parents=True, exist_ok=True)
         return path / filename
 
+    def get_epoched_file_path(self, subject_id, session_id, task_id=None, run_id=None):
+        """
+        Get the exact path for epoched files in the format required by other scripts.
+        Format: sub-{sub_id}_ses-{ses_id}_task-{task_id}_run-{run_id}_preprocessed-epoched.fif
+        """
+        sub = f'sub-{subject_id}'    
+        ses = f'ses-{session_id}'
+        
+        # Create the filename with the exact format required
+        filename = f"{sub}_{ses}"
+        if task_id:
+            filename += f"_task-{task_id}"
+        if run_id:
+            filename += f"_run-{run_id}"
+        filename += "_preprocessed-epoched.fif"
+        
+        path = self.processed_dir / sub / ses
+        path.mkdir(parents=True, exist_ok=True)
+        return path / filename
+
     def get_autoreject_report_dir(self, subject_id, session_id, task_id=None, run_id=None):
         """Standardized report directory with auto-creation"""
         sub = f'sub-{subject_id}'    

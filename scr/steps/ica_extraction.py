@@ -10,6 +10,28 @@ import numpy as np
 import matplotlib.pyplot as plt
 from scipy import signal
 
+# Set environment variable to use software rendering if OpenGL_accelerate is not available
+os.environ['MNE_3D_OPTION_ANTIALIAS'] = 'false'
+os.environ['PYOPENGL_PLATFORM'] = 'osmesa'  # Use software rendering
+
+# Avoid Qt errors by using Agg backend if there are problems
+try:
+    # First try to import Qt and check version
+    from PyQt5.QtCore import QT_VERSION_STR
+    logging.info(f"[ICAExtractionStep] Qt version: {QT_VERSION_STR}")
+except ImportError:
+    logging.warning("[ICAExtractionStep] PyQt5 not found, defaulting to Agg backend")
+    import matplotlib
+    matplotlib.use('Agg')
+except Exception as e:
+    logging.warning(f"[ICAExtractionStep] Qt error: {e}, defaulting to Agg backend")
+    import matplotlib
+    matplotlib.use('Agg')
+
+# Suppress OpenGL-related warnings
+import warnings
+warnings.filterwarnings("ignore", message="No OpenGL_accelerate module loaded")
+
 # Helper function to check and install dependencies
 def _check_install_dependencies():
     """Check for dependencies needed for advanced ICA visualization and try to install if missing."""
@@ -97,6 +119,9 @@ class ICAExtractionStep(BaseStep):
         # Check for dependencies needed for advanced visualizations
         _check_install_dependencies()
         
+        # Import matplotlib for backend configuration
+        import matplotlib
+        
         if data is None:
             raise ValueError("[ICAExtractionStep] No data provided for ICA.")
 
@@ -117,8 +142,10 @@ class ICAExtractionStep(BaseStep):
             "plot_sources": True,
             "plot_properties": True,
             "plot_psd": True,
-            "plot_overlay": True,
-            "verbose": True
+            "plot_overlay": False,
+            "plot_details": False,
+            "verbose": True,
+            "save_data": False
         }
         params = {**default_params, **self.params}
         sub_id = params.get("subject_id", "unknown")
@@ -130,7 +157,6 @@ class ICAExtractionStep(BaseStep):
         # --------------------------
         # Configure matplotlib backend for plotting
         # --------------------------
-        import matplotlib
         original_backend = matplotlib.get_backend()
         # Check if we need to switch backends for interactive plotting
         if params["interactive"]:
@@ -138,8 +164,21 @@ class ICAExtractionStep(BaseStep):
                 # Try to switch to TkAgg for interactive plots
                 if original_backend != 'TkAgg' and original_backend != 'Qt5Agg' and original_backend != 'WXAgg':
                     logging.info(f"[ICAExtractionStep] Switching matplotlib backend from {original_backend} to TkAgg for interactive plotting")
-                    matplotlib.use('TkAgg')
-                    plt.ion()  # Turn on interactive mode
+                    try:
+                        matplotlib.use('TkAgg')
+                    except Exception:
+                        # If TkAgg fails, try Qt5Agg
+                        try:
+                            logging.info("[ICAExtractionStep] TkAgg failed, trying Qt5Agg")
+                            matplotlib.use('Qt5Agg')
+                        except Exception:
+                            # If Qt5Agg fails, fall back to Agg
+                            logging.warning("[ICAExtractionStep] All interactive backends failed, using Agg")
+                            matplotlib.use('Agg')
+                            params["interactive"] = False  # Disable interactive mode
+                    
+                    if params["interactive"]:
+                        plt.ion()  # Turn on interactive mode
             except Exception as e:
                 logging.warning(f"[ICAExtractionStep] Could not switch to interactive backend: {e}")
                 logging.warning("[ICAExtractionStep] Interactive plots may not work properly")
@@ -184,13 +223,41 @@ class ICAExtractionStep(BaseStep):
                     events, 
                     tmin=0, 
                     tmax=1, 
-                    baseline=None, 
+                    baseline=None,  # No baseline correction for ICA
                     preload=True,
                     reject_by_annotation=True  # This ensures epochs with BAD_* annotations are excluded
                 )
                 logging.info(f"[ICAExtractionStep] Created {len(good_epochs)} epochs, excluding segments with bad annotations")
+
+            elif isinstance(data, mne.Epochs) or str(type(data).__name__) == 'EpochsFIF' or hasattr(data, 'epochs'):
+                # Handle already epoched data
+                logging.info("[ICAExtractionStep] Input is already epoched data")
+                
+                # Check for autoreject info in data.info["temp"]
+                bad_indices = None
+                if 'temp' in data.info:
+                    if 'autoreject_bad_epochs' in data.info['temp']:
+                        # Method 1: Direct indices
+                        bad_indices = data.info['temp']['autoreject_bad_epochs']
+                        logging.info(f"[ICAExtractionStep] Found {len(bad_indices)} bad epochs from autoreject_bad_epochs")
+                    elif 'autoreject' in data.info['temp'] and 'bad_epochs' in data.info['temp']['autoreject']:
+                        # Method 2: Boolean array from full autoreject info
+                        bad_epochs_bool = data.info['temp']['autoreject']['bad_epochs']
+                        bad_indices = [i for i, bad in enumerate(bad_epochs_bool) if bad]
+                        logging.info(f"[ICAExtractionStep] Found {len(bad_indices)} bad epochs from autoreject info")
+                
+                if bad_indices:
+                    # Create mask of good epochs
+                    good_indices = [i for i in range(len(data)) if i not in bad_indices]
+                    good_epochs = data[good_indices]
+                    logging.info(f"[ICAExtractionStep] Using {len(good_epochs)}/{len(data)} good epochs for ICA")
+                else:
+                    # No bad epochs found, use all epochs
+                    logging.warning("[ICAExtractionStep] No autoreject information found. Using all epochs for ICA.")
+                    good_epochs = data
+                    logging.info(f"[ICAExtractionStep] Using all {len(good_epochs)} epochs for ICA")
             else:
-                # No annotations found, use all data
+                    # No annotations found, use all data
                 logging.warning("[ICAExtractionStep] No BAD_autoreject annotations found. Using all data for ICA.")
                 events = mne.make_fixed_length_events(data, duration=1)
                 good_epochs = mne.Epochs(data, events, tmin=0, tmax=1, baseline=None, preload=True)
@@ -200,24 +267,21 @@ class ICAExtractionStep(BaseStep):
             good_epochs = data
 
         # --------------------------
-        # 4) Fit ICA
+        # 4) Configure plot directory
         # --------------------------
-        logging.info(f"[ICAExtractionStep] Fitting ICA with {n_components} components using {params['method']} method...")
-        ica.fit(
-            good_epochs,
-            decim=params["decim"],
-            reject=None,
-        )
-        logging.info(f"[ICAExtractionStep] ICA fitted successfully. Found {ica.n_components_} components.")
-
-        # --------------------------
-        # 5) Generate Plots
-        # --------------------------
-        # Create a directory for saving plots if needed
-        if paths is not None:
-            plot_dir = paths.get_ica_plots_dir(sub_id, ses_id)
+        if params["plot_dir"] is None:
+            # Use paths object if available to get standard plot directory
+            if paths is not None:
+                plot_dir = paths.get_ica_report_dir(sub_id, ses_id, task_id, run_id)
+            else:
+                # Default to a subdirectory in the current directory
+                plot_dir = f"./ica_plots/sub-{sub_id}/ses-{ses_id}"
+                if task_id:
+                    plot_dir += f"/task-{task_id}"
+                if run_id:
+                    plot_dir += f"/run-{run_id}"
         else:
-            plot_dir = params.get("plot_dir", f"./ica_extraction_plots/sub-{sub_id}_ses-{ses_id}")
+            plot_dir = params["plot_dir"]
         
         os.makedirs(plot_dir, exist_ok=True)
         logging.info(f"[ICAExtractionStep] Saving plots to {plot_dir}")
@@ -238,26 +302,100 @@ class ICAExtractionStep(BaseStep):
         if params["plot_psd"]:
             self._plot_component_psd(ica, data, plot_dir, params)
             
-        # Generate overlay plots to compare original and reconstructed data
-        if params["plot_overlay"]:
-            self._plot_data_overlay(ica, data, plot_dir, params)
+        # # Generate overlay plots to compare original and reconstructed data
+        # if params["plot_overlay"]:
+        #     self._plot_data_overlay(ica, data, plot_dir, params)
             
         # Generate component details page with all plots
-        self._generate_component_details(ica, data, good_epochs, plot_dir, params)
+        # self._generate_component_details(ica, data, good_epochs, plot_dir, params)
+        
+        # Only generate component details if specifically requested
+        if params.get("plot_details", False):
+            try:
+                self._generate_component_details(ica, data, good_epochs, plot_dir, params)
+            except Exception as e:
+                logging.error(f"[ICAExtractionStep] Error generating component details: {e}")
+                logging.error("[ICAExtractionStep] Continuing without component details")
+        
+        # --------------------------
+        # 5) Fit ICA
+        # --------------------------
+        logging.info(f"[ICAExtractionStep] Fitting ICA with {ica.n_components} components using {params['method']} method...")
+        try:
+            ica.fit(
+                good_epochs,
+                decim=params["decim"],
+                reject=None,
+            )
+            logging.info(f"[ICAExtractionStep] ICA fitted successfully. Found {ica.n_components_} components.")
+            
+            # Store the ICA fitted flag
+            self.ica = ica
+        except Exception as e:
+            logging.error(f"[ICAExtractionStep] Error fitting ICA: {e}")
+            logging.error("[ICAExtractionStep] ICA extraction failed")
+            return data
         
         # --------------------------
         # 6) Save ICA solution
         # --------------------------
-        if paths is not None:
-            ica_file = paths.get_derivative_path(sub_id, ses_id) / f'sub-{sub_id}_ses-{ses_id}_desc-ica_decomposition.fif'
-            os.makedirs(os.path.dirname(str(ica_file)), exist_ok=True)
-            
+        if paths is not None and hasattr(ica, 'n_components_'):  # Only save if ICA was successfully fitted
             try:
-                ica.save(str(ica_file), overwrite=True)
-                logging.info(f"[ICAExtractionStep] Saved ICA decomposition to {ica_file}")
+                # Use normalized path handling for Windows compatibility
+                ica_dir = os.path.normpath(os.path.dirname(str(paths.get_derivative_path(sub_id, ses_id))))
+                ica_filename = f'sub-{sub_id}_ses-{ses_id}_desc-ica_decomposition.fif'
+                ica_file = os.path.join(ica_dir, ica_filename)
+                
+                # Ensure directory exists
+                os.makedirs(os.path.dirname(ica_file), exist_ok=True)
+                
+                # Save without using paths for the final save
+                logging.info(f"[ICAExtractionStep] Saving ICA decomposition to {ica_file}")
+                ica.save(ica_file, overwrite=True)
+                logging.info(f"[ICAExtractionStep] Successfully saved ICA decomposition")
             except Exception as e:
                 logging.error(f"[ICAExtractionStep] Error saving ICA decomposition: {e}")
                 logging.error("[ICAExtractionStep] Continuing without saving ICA decomposition")
+        
+        # Save the data with ICA components if requested
+        save_data = params.get("save_data", False)
+        if save_data and hasattr(ica, 'n_components_'):  # Only save if ICA was successfully fitted
+            try:
+                if paths is None:
+                    logging.error("[ICAExtractionStep] Cannot save data: paths object is None")
+                    return data
+                
+                # Use normalized path handling for Windows compatibility
+                output_dir = os.path.normpath(os.path.dirname(str(paths.get_derivative_path(sub_id, ses_id))))
+
+                # Create directory if it doesn't exist
+                os.makedirs(output_dir, exist_ok=True)
+                
+                # Create filename
+                run_str = f"_run-{run_id}" if run_id else ""
+                task_str = f"_task-{task_id}" if task_id else ""
+                file_name = f"sub-{sub_id}_ses-{ses_id}{task_str}{run_str}_desc-ica_epo.fif"
+                
+                file_path = os.path.join(output_dir, file_name)
+                
+                # Make a clean copy of the data to save
+                data_to_save = data.copy()
+                
+                # Remove all complex objects from info dict
+                if 'temp' in data_to_save.info:
+                    del data_to_save.info['temp']
+                
+                # CRITICAL: Create a completely new subject_info dictionary with only string values
+                # This is needed to avoid the "data type '>a' not understood" error
+                data_to_save.info['subject_info'] = {'his_id': f"sub-{sub_id}"}
+                
+                # Save the data
+                logging.info(f"[ICAExtractionStep] Saving data with ICA components to {file_path}")
+                data_to_save.save(file_path, overwrite=True)
+                logging.info(f"[ICAExtractionStep] Successfully saved data")
+            except Exception as e:
+                logging.error(f"[ICAExtractionStep] Error saving data with ICA components: {e}")
+                logging.error("[ICAExtractionStep] Continuing without saving data")
         
         # If we switched matplotlib backends, switch back to the original
         if params["interactive"] and original_backend not in ['TkAgg', 'Qt5Agg', 'WXAgg']:
@@ -269,9 +407,9 @@ class ICAExtractionStep(BaseStep):
                 logging.warning(f"[ICAExtractionStep] Error switching back to original backend: {e}")
         
         # Store ica object in the data's info
-        if not hasattr(data.info, "temp"):
-            data.info["temp"] = {}
-        data.info["temp"]["ica"] = ica
+        if not 'temp' in data.info:
+            data.info['temp'] = {}
+        data.info['temp']['ica'] = ica
         
         return data
     
@@ -339,27 +477,75 @@ class ICAExtractionStep(BaseStep):
             
             # Always save the plot to file
             try:
-                fig = ica.plot_sources(data, show=False)
-                fig.savefig(os.path.join(sources_dir, "sources_all.png"), dpi=300)
-                plt.close(fig)
+                # Set non-interactive backend temporarily if we're having Qt issues
+                if 'Qt' in str(matplotlib.get_backend()):
+                    try:
+                        import matplotlib
+                        temp_backend = matplotlib.get_backend()
+                        matplotlib.use('Agg')
+                        fig = ica.plot_sources(data, show=False)
+                        fig.savefig(os.path.join(sources_dir, "sources_all.png"), dpi=300)
+                        plt.close(fig)
+                        # Restore original backend
+                        matplotlib.use(temp_backend)
+                    except Exception as e:
+                        logging.error(f"[ICAExtractionStep] Error with backend switch for source plot: {e}")
+                else:
+                    # Standard approach
+                    fig = ica.plot_sources(data, show=False)
+                    fig.savefig(os.path.join(sources_dir, "sources_all.png"), dpi=300)
+                    plt.close(fig)
             except Exception as e:
                 logging.error(f"[ICAExtractionStep] Error saving source time course plot: {e}")
                 
             # Plot individual source time courses
-            sources = ica.get_sources(data)
-            for comp_idx in range(ica.n_components_):
-                try:
-                    fig, ax = plt.subplots(figsize=(10, 3))
-                    times = np.arange(sources.n_times) / sources.info['sfreq']
-                    ax.plot(times, sources.get_data()[comp_idx], 'b')
-                    ax.set_title(f'Component {comp_idx} Time Course')
-                    ax.set_xlabel('Time (s)')
-                    ax.set_ylabel('Amplitude')
-                    fig.tight_layout()
-                    fig.savefig(os.path.join(sources_dir, f"source_{comp_idx:03d}.png"), dpi=300)
-                    plt.close(fig)
-                except Exception as e:
-                    logging.error(f"[ICAExtractionStep] Error plotting individual source {comp_idx}: {e}")
+            try:
+                # Use get_sources safely based on data type
+                sources = ica.get_sources(data)
+                
+                # Handle different data types
+                if isinstance(sources, mne.Epochs) or str(type(sources).__name__) == 'EpochsFIF':
+                    # For epochs, take the first epoch or average across epochs
+                    source_data = sources.get_data().mean(axis=0)  # Average across epochs
+                    sfreq = sources.info['sfreq']
+                    times = np.arange(source_data.shape[1]) / sfreq
+                    
+                    for comp_idx in range(ica.n_components_):
+                        try:
+                            fig, ax = plt.subplots(figsize=(10, 3))
+                            ax.plot(times, source_data[comp_idx], 'b')
+                            ax.set_title(f'Component {comp_idx} Time Course (Averaged)')
+                            ax.set_xlabel('Time (s)')
+                            ax.set_ylabel('Amplitude')
+                            fig.tight_layout()
+                            fig.savefig(os.path.join(sources_dir, f"source_{comp_idx:03d}.png"), dpi=300)
+                            plt.close(fig)
+                        except Exception as e:
+                            logging.error(f"[ICAExtractionStep] Error plotting individual source {comp_idx}: {e}")
+                
+                elif isinstance(sources, mne.io.Raw):
+                    # For Raw data
+                    source_data = sources.get_data()
+                    times = np.arange(source_data.shape[1]) / sources.info['sfreq']
+                    
+                    for comp_idx in range(ica.n_components_):
+                        try:
+                            fig, ax = plt.subplots(figsize=(10, 3))
+                            ax.plot(times, source_data[comp_idx], 'b')
+                            ax.set_title(f'Component {comp_idx} Time Course')
+                            ax.set_xlabel('Time (s)')
+                            ax.set_ylabel('Amplitude')
+                            fig.tight_layout()
+                            fig.savefig(os.path.join(sources_dir, f"source_{comp_idx:03d}.png"), dpi=300)
+                            plt.close(fig)
+                        except Exception as e:
+                            logging.error(f"[ICAExtractionStep] Error plotting individual source {comp_idx}: {e}")
+                
+                else:
+                    logging.warning(f"[ICAExtractionStep] Unsupported data type for individual source plots: {type(sources)}")
+                    
+            except Exception as e:
+                logging.error(f"[ICAExtractionStep] Error creating individual source plots: {e}")
                     
         except Exception as e:
             logging.error(f"[ICAExtractionStep] Error in _plot_source_timecourses: {e}")
@@ -413,12 +599,23 @@ class ICAExtractionStep(BaseStep):
             sources = ica.get_sources(data)
             sfreq = data.info['sfreq']
             
+            # Extract source data based on data type
+            if isinstance(sources, mne.Epochs) or str(type(sources).__name__) == 'EpochsFIF':
+                # For epochs, take average across epochs
+                source_data_array = sources.get_data().mean(axis=0)  # Average across epochs
+            elif isinstance(sources, mne.io.Raw):
+                # For Raw data
+                source_data_array = sources.get_data()
+            else:
+                logging.warning(f"[ICAExtractionStep] Unsupported data type for PSD plots: {type(sources)}")
+                return
+                
             # Create plots comparing PSDs of all components
             try:
                 fig, ax = plt.subplots(figsize=(12, 8))
                 
                 for comp_idx in range(ica.n_components_):
-                    source_data = sources.get_data()[comp_idx]
+                    source_data = source_data_array[comp_idx]
                     f, Pxx = signal.welch(source_data, fs=sfreq, nperseg=min(4096, len(source_data)))
                     ax.semilogy(f, Pxx, alpha=0.7, label=f'Comp {comp_idx}' if comp_idx < 10 else None)
                 
@@ -440,7 +637,7 @@ class ICAExtractionStep(BaseStep):
             # Create individual PSD plots
             for comp_idx in range(ica.n_components_):
                 try:
-                    source_data = sources.get_data()[comp_idx]
+                    source_data = source_data_array[comp_idx]
                     f, Pxx = signal.welch(source_data, fs=sfreq, nperseg=min(4096, len(source_data)))
                     
                     fig, ax = plt.subplots(figsize=(8, 6))
