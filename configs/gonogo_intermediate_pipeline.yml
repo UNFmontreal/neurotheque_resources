@@ -7,75 +7,106 @@ directory:
   processed_dir: data/processed
   raw_data_dir: data/pilot_data/tasks
   reports_dir: reports/intermediate
-  root: ./
-file_path_pattern: sub-01_ses-001_task-gng_image_run-01_raw.fif
+  root: D:/Yann/neurotheque_resources/
+file_path_pattern: sub-01_ses-001_task-gng_run-01_epoched.fif
+
+# Debug mode settings
+debug_mode:
+  enabled: True  # Set to true to enable debug mode
+  # Fast AutoReject settings for debug mode
+  autoreject:
+    n_interpolate: [1]
+    consensus: [0.1, 0.3, 0.5, 0.75]
+    thresh_method: "cross_validation"
+    n_jobs: 4
+    cv: 3
+    verbose: "tqdm"
+    skip_plots: true
+  # Fast ICA settings for debug mode
+  ica:
+    n_components: 10
+    method: fastica
+    max_iter: 100
+    decim: 10
+    skip_plots: true
+  # Fast ICA labeling settings for debug mode
+  ica_labeling:
+    methods: [correlation]
+    skip_plots: true
+    auto_exclude: true
+
 pipeline:
   steps:
   - name: LoadData
     params:
+      # This will be set programmatically to load the preprocessed epochs from minimal pipeline
       input_file: null
-  - name: CustomPrepChannelsStep
+  - name: AutoRejectStep
     params:
-      channel_types:
-        X1:ECG: ecg
-      on_missing: ignore
-  - name: FilterStep
+      ar_params:
+        n_interpolate: [1, 4, 8]
+        consensus: [0.1, 0.3, 0.5, 0.75, 0.95]
+        thresh_method: bayesian_optimization
+        n_jobs: 1
+      plot_results: true
+      mode: fit  # Only identify bad epochs, don't clean
+      file_prefix: ar_first_pass
+      store_reject_log: true
+      save_model: true
+  - name: ICAExtractionStep
     params:
-      h_freq: 40.0
-      l_freq: 1.0
-      notch_freqs:
-      - 50
-      - 60
-  - name: CustomEpochingStep
-    params:
-      baseline:
-      - null
-      - 0
-      event_id:
-        go: 1
-        nogo: 2
-      stim_channel: Trigger
-      tmax: 1.0
-      tmin: -0.2
-  - name: SimpleAutoRejectStep
-    params:
-      flat:
-        eeg: 1.0e-06
-      reject:
-        ecg: 0.0005
-        eeg: 0.0001
-  - name: ICAStep
-    params:
-      ecg_threshold: 3.0
-      eog_threshold: 3.0
-      exclude: []
+      n_components: 0.99  # Explain 99% of variance
+      method: infomax
+      max_iter: 2000
       fit_params:
         extended: true
-      interactive: false
-      method: infomax
-      n_components: 0.99
+      decim: 3
+      use_good_epochs_only: true  # Use only good epochs identified by AutoReject
       plot_components: true
       plot_sources: true
-      use_good_epochs_only: true
-  - name: CustomEpochingStep
+      plot_properties: true
+      plot_psd: true
+      interactive: false  # Set to true for interactive plots
+  - name: ICALabelingStep
     params:
-      baseline:
-      - null
-      - 0
-      event_id:
-        go: 1
-        nogo: 2
-      stim_channel: Trigger
-      tmax: 1.0
-      tmin: -0.2
-  - name: SimpleAutoRejectStep
+      methods:
+        - iclabel
+        - correlation
+      thresholds:
+        iclabel:
+          eye: 0.8       # High threshold for eye artifacts
+          heart: 0.8     # High threshold for heart artifacts
+          muscle: 0.8    # High threshold for muscle artifacts
+          line_noise: 0.8
+          channel_noise: 0.8
+          other: 0.8
+        correlation:
+          eog: 0.5
+          ecg: 0.3
+      eog_ch_names: 
+        - Fp1 
+        - Fp2  # Frontal channels for EOG detection
+      ecg_channel: null  # No dedicated ECG channel in our data
+      manual_selection: false  # Automatically select components
+      plot_labeled: true
+      plot_before_after: true
+      interactive: false
+      reconstruct: true  # Reconstruct signal by removing artifact components
+      auto_exclude: true  # Automatically exclude components based on thresholds
+  - name: AutoRejectStep
     params:
-      flat:
-        eeg: 1.0e-06
-      reject:
-        ecg: 0.0005
-        eeg: 0.0001
+      ar_params:
+        n_interpolate: [1, 4, 8]
+        consensus: [0.1, 0.3, 0.5, 0.75, 0.95]
+        thresh_method: bayesian_optimization
+        n_jobs: 1
+      plot_results: true
+      mode: fit_transform  # Clean and keep only good epochs
+      file_prefix: ar_final_pass
+      store_reject_log: true
+      save_model: true
   - name: SaveCheckpoint
     params:
+      suffix: intermediate-cleaned-epo
       overwrite: true
-pipeline_mode: standard
+pipeline_mode: intermediate
