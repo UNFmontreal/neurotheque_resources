@@ -7,6 +7,9 @@ import numpy as np
 import matplotlib.pyplot as plt
 from scipy import signal
 from .base import BaseStep
+from ..utils.mne_utils import clean_mne_object
+import sys
+import subprocess
 
 # Helper function to check and install dependencies
 def _check_install_dependencies():
@@ -28,9 +31,6 @@ def _check_install_dependencies():
     # Try to install missing dependencies
     if missing_deps:
         try:
-            import subprocess
-            import sys
-            
             logging.info(f"[ICALabelingStep] Installing missing dependencies: {', '.join(missing_deps)}")
             subprocess.check_call([sys.executable, "-m", "pip", "install", "--user"] + missing_deps)
             logging.info("[ICALabelingStep] Successfully installed dependencies")
@@ -54,6 +54,19 @@ def _check_install_dependencies():
             logging.warning(f"[ICALabelingStep] Failed to install missing dependencies: {e}")
             logging.warning("[ICALabelingStep] Some advanced ICA visualizations may not be available")
             logging.warning(f"[ICALabelingStep] To manually install, run: pip install {' '.join(missing_deps)}")
+
+def _open_folder(path):
+    """Open the folder in the file explorer."""
+    try:
+        if sys.platform == 'win32':
+            os.startfile(path)
+        elif sys.platform == 'darwin':  # macOS
+            subprocess.call(['open', path])
+        else:  # Linux
+            subprocess.call(['xdg-open', path])
+        print(f"Opening folder: {path}")
+    except Exception as e:
+        print(f"Failed to open folder: {e}")
 
 class ICALabelingStep(BaseStep):
     """
@@ -106,8 +119,8 @@ class ICALabelingStep(BaseStep):
                     "other": 0.8
                 },
                 "correlation": {
-                    "eog": 0.5,
-                    "ecg": 0.3
+                    "eog": 0.8,
+                    "ecg": 0.8
                 }
             },
             "eog_ch_names": ["Fp1", "Fp2"],
@@ -129,27 +142,53 @@ class ICALabelingStep(BaseStep):
         run_id = params.get("run_id", None)
         paths = params.get("paths", None)
         
+        # Collection to store figures for display in notebook
+        self.figures = []
+        
         # --------------------------
         # Configure matplotlib backend for plotting
         # --------------------------
         import matplotlib
         original_backend = matplotlib.get_backend()
-        # Check if we need to switch backends for interactive plotting
-        if params["interactive"]:
+        
+        # For Jupyter notebooks, it's better to use inline backend
+        if not params["interactive"] and 'ipykernel' in sys.modules:
             try:
-                # Try to switch to TkAgg for interactive plots
+                logging.info("[ICALabelingStep] Jupyter environment detected, using inline backend")
+                matplotlib.use('inline')
+            except Exception as e:
+                logging.warning(f"[ICALabelingStep] Could not switch to inline backend: {e}")
+        # Check if we need to switch backends for interactive plotting
+        elif params["interactive"]:
+            try:
+                # Try to switch to TkAgg for interactive plots or other suitable backends
                 if original_backend != 'TkAgg' and original_backend != 'Qt5Agg' and original_backend != 'WXAgg':
-                    logging.info(f"[ICALabelingStep] Switching matplotlib backend from {original_backend} to TkAgg for interactive plotting")
-                    matplotlib.use('TkAgg')
-                    plt.ion()  # Turn on interactive mode
+                    # Try multiple backends in order of preference
+                    for backend in ['TkAgg', 'Qt5Agg', 'Qt4Agg', 'WXAgg', 'MacOSX', 'Agg']:
+                        try:
+                            matplotlib.use(backend, force=True)
+                            print(f"[ICALabelingStep] Switched matplotlib backend to {backend} for interactive plotting")
+                            break
+                        except Exception:
+                            continue
+                    
+                    # If interactive plotting is not working properly, we should still save to disk
+                    if matplotlib.get_backend() == 'Agg':
+                        print("[ICALabelingStep] WARNING: Using non-interactive Agg backend")
+                        print("[ICALabelingStep] Plots will be saved to disk but not displayed")
+                        print(f"[ICALabelingStep] Plots will be saved to: {os.path.abspath(plot_dir)}")
+                    else:
+                        plt.ion()  # Turn on interactive mode
+                    
+                    print(f"[ICALabelingStep] Using matplotlib backend: {matplotlib.get_backend()}")
             except Exception as e:
                 logging.warning(f"[ICALabelingStep] Could not switch to interactive backend: {e}")
                 logging.warning("[ICALabelingStep] Interactive plots may not work properly")
-                
+        
         # --------------------------
         # 2) Retrieve ICA from data
         # --------------------------
-        if hasattr(data.info, "temp") and "ica" in data.info["temp"]:
+        if 'temp' in data.info and "ica" in data.info["temp"]:
             ica = data.info["temp"]["ica"]
             logging.info("[ICALabelingStep] Retrieved ICA from data.info['temp']")
         else:
@@ -172,12 +211,13 @@ class ICALabelingStep(BaseStep):
         # 3) Create plots directory
         # --------------------------
         if paths is not None:
-            plot_dir = paths.get_ica_label_plots_dir(sub_id, ses_id)
+            plot_dir = paths.get_ica_report_dir(sub_id, ses_id, task_id, run_id)
         else:
             plot_dir = params.get("plot_dir", f"./ica_labeling_plots/sub-{sub_id}_ses-{ses_id}")
         
         os.makedirs(plot_dir, exist_ok=True)
         logging.info(f"[ICALabelingStep] Saving plots to {plot_dir}")
+        print(f"[ICALabelingStep] Plots will be saved to: {os.path.abspath(plot_dir)}")
         
         # --------------------------
         # 4) Label components using specified methods
@@ -213,22 +253,28 @@ class ICALabelingStep(BaseStep):
                 labeled_components["correlation"] = corr_artifacts
                 
                 # Add EOG components to artifacts list
-                if "eog" in corr_artifacts and corr_artifacts["eog"]:
-                    for idx in corr_artifacts["eog"]:
-                        all_artifacts.add(idx)
-                        logging.info(f"[ICALabelingStep] Component {idx} identified as EOG")
+                if "eog" in corr_artifacts and corr_artifacts["eog"] and "eog_scores" in corr_artifacts:
+                    for idx, score in zip(corr_artifacts["eog"], corr_artifacts["eog_scores"]):
+                        # Only include components with correlation score of 0.8 or higher
+                        if float(score) >= 0.8:
+                            all_artifacts.add(idx)
+                            logging.info(f"[ICALabelingStep] Component {idx} identified as EOG with score {float(score):.2f}")
                 
                 # Add ECG components to artifacts list
-                if "ecg" in corr_artifacts and corr_artifacts["ecg"]:
-                    for idx in corr_artifacts["ecg"]:
-                        all_artifacts.add(idx)
-                        logging.info(f"[ICALabelingStep] Component {idx} identified as ECG")
+                if "ecg" in corr_artifacts and corr_artifacts["ecg"] and "ecg_scores" in corr_artifacts:
+                    for idx, score in zip(corr_artifacts["ecg"], corr_artifacts["ecg_scores"]):
+                        # Only include components with correlation score of 0.8 or higher
+                        if score >= 0.8:
+                            all_artifacts.add(idx)
+                            logging.info(f"[ICALabelingStep] Component {idx} identified as ECG with score {score:.2f}")
         
         # --------------------------
         # 5) Plot labeled components
         # --------------------------
         if params["plot_labeled"]:
-            self._plot_labeled_components(ica, data, labeled_components, all_artifacts, plot_dir, params)
+            labeled_figs = self._plot_labeled_components(ica, data, labeled_components, all_artifacts, plot_dir, params)
+            if labeled_figs:
+                self.figures.extend(labeled_figs)
         
         # --------------------------
         # 6) Manual selection of components to exclude
@@ -286,16 +332,47 @@ class ICALabelingStep(BaseStep):
             
             # Plot before and after
             if params["plot_before_after"]:
-                self._plot_before_after(data, data_clean, ica, plot_dir, params)
+                ba_figs = self._plot_before_after(data, data_clean, ica, plot_dir, params)
+                if ba_figs:
+                    self.figures.extend(ba_figs)
             
-            # Save cleaned data
-            if paths is not None:
-                clean_file = paths.get_derivative_path(sub_id, ses_id) / f'sub-{sub_id}_ses-{ses_id}_desc-ica_cleaned.fif'
-                os.makedirs(os.path.dirname(str(clean_file)), exist_ok=True)
-                
+            # Try to open the plot directory in file explorer
+            if params.get("open_plot_dir", True):
+                _open_folder(plot_dir)
+            
+            # Save the cleaned data to disk
+            if params.get("save_data", False):
                 try:
-                    data_clean.save(str(clean_file), overwrite=True)
-                    logging.info(f"[ICALabelingStep] Saved cleaned data to {clean_file}")
+                    # Create standardized file paths
+                    if "output_file" in params:
+                        clean_file = params["output_file"]
+                    elif paths is not None:
+                        clean_file = os.path.join(
+                            os.path.normpath(os.path.dirname(str(paths.get_derivative_path(sub_id, ses_id)))),
+                            f"sub-{sub_id}_ses-{ses_id}_task-{task_id}_run-{run_id}_desc-ica_labeled_epo.fif"
+                        )
+                    else:
+                        logging.error("[ICALabelingStep] No output_file or paths provided, cannot save data")
+                        return data_clean
+                    
+                    # Ensure directory exists
+                    os.makedirs(os.path.dirname(str(clean_file)), exist_ok=True)
+                    
+                    # Make a clean copy without the complex ICA object
+                    data_to_save = clean_mne_object(data_clean)
+                    
+                    # Remove all complex objects from info dict
+                    if 'temp' in data_to_save.info:
+                        del data_to_save.info['temp']
+                    
+                    # CRITICAL: Create a completely new subject_info dictionary with only string values
+                    # This is needed to avoid the "data type '>a' not understood" error
+                    data_to_save.info['subject_info'] = {'his_id': f"sub-{sub_id}"}
+                    
+                    # Save the data
+                    logging.info(f"[ICALabelingStep] Saving cleaned data to {clean_file}")
+                    data_to_save.save(str(clean_file), overwrite=True)
+                    logging.info(f"[ICALabelingStep] Successfully saved cleaned data")
                 except Exception as e:
                     logging.error(f"[ICALabelingStep] Error saving cleaned data: {e}")
                     logging.error("[ICALabelingStep] Continuing without saving cleaned data")
@@ -309,6 +386,13 @@ class ICALabelingStep(BaseStep):
                 "labeled_components": labeled_components
             }
             
+            # Display figures in notebook if running in Jupyter
+            if 'ipykernel' in sys.modules and self.figures:
+                for fig in self.figures:
+                    if fig is not None:
+                        plt.figure(fig.number)
+                        plt.show()
+            
             return data_clean
         else:
             # Just store labeling information in data.info
@@ -319,6 +403,29 @@ class ICALabelingStep(BaseStep):
                 "labeled_components": labeled_components,
                 "suggested_exclude": sorted(list(all_artifacts))
             }
+            
+            # Save data if requested with custom file path
+            save_data = params.get("save_data", False)
+            output_file = params.get("output_file", None)
+            
+            if save_data and output_file:
+                try:
+                    # Ensure directory exists
+                    os.makedirs(os.path.dirname(output_file), exist_ok=True)
+                    # Clean the data before saving
+                    data_to_save = clean_mne_object(data)
+                    # Save to specified path
+                    data_to_save.save(output_file, overwrite=True)
+                    logging.info(f"[ICALabelingStep] Saved data with ICA labels to {output_file}")
+                except Exception as e:
+                    logging.error(f"[ICALabelingStep] Error saving data to {output_file}: {e}")
+            
+            # Display figures in notebook if running in Jupyter
+            if 'ipykernel' in sys.modules and self.figures:
+                for fig in self.figures:
+                    if fig is not None:
+                        plt.figure(fig.number)
+                        plt.show()
             
             return data
         
@@ -357,7 +464,7 @@ class ICALabelingStep(BaseStep):
         if params["eog_ch_names"]:
             try:
                 eog_indices, eog_scores = ica.find_bads_eog(
-                    data,
+                    inst=data,
                     ch_name=params["eog_ch_names"],
                     threshold=thresholds["eog"]
                 )
@@ -365,7 +472,7 @@ class ICALabelingStep(BaseStep):
                 if eog_indices:
                     logging.info(f"[ICALabelingStep] Identified EOG components: {eog_indices}")
                     result["eog"] = eog_indices
-                    result["eog_scores"] = eog_scores
+                    result["eog_scores"] = eog_scores[0]
                 else:
                     logging.info("[ICALabelingStep] No EOG components identified")
             except Exception as e:
@@ -392,19 +499,27 @@ class ICALabelingStep(BaseStep):
         return result if result else None
     
     def _plot_labeled_components(self, ica, data, labeled_components, all_artifacts, plot_dir, params):
-        """Plot components with their labels."""
+        """
+        Plot ICA components with classification and artifact details.
+        This version uses built‐in MNE plotting functions for improved representation.
+        """
         logging.info("[ICALabelingStep] Plotting labeled components")
-        
+        all_figs = []
         try:
             # Create a directory for labeled component plots
             labeled_dir = os.path.join(plot_dir, "labeled_components")
             os.makedirs(labeled_dir, exist_ok=True)
+            print(f"[ICALabelingStep] Saving plots to: {os.path.abspath(labeled_dir)}")
             
-            # 1. Plot an overview of all components with their labels
-            fig = plt.figure(figsize=(15, 10))
+            # ----- Overview Plot -----
+            # Use a bar plot for a quick overview that color-codes components by type.
             n_components = ica.n_components_
+            fig_overview, ax_overview = plt.subplots(figsize=(15, 4))
+            ax_overview.set_title("ICA Components Classification Overview", fontsize=14, fontweight='bold')
+            ax_overview.set_xlabel("Component Index")
+            ax_overview.set_xticks(np.arange(n_components))
             
-            # Define colors for different artifact types
+            # Define a simple color map.
             color_map = {
                 'brain': 'green',
                 'eye': 'blue',
@@ -412,419 +527,114 @@ class ICALabelingStep(BaseStep):
                 'muscle': 'purple',
                 'line_noise': 'orange',
                 'channel_noise': 'brown',
-                'other': 'gray',
-                'eog': 'blue',
-                'ecg': 'red',
-                'artifact': 'black'
+                'other': 'gray'
             }
-            
-            # Create a colorbar for component types
-            gs = plt.GridSpec(3, 1, height_ratios=[1, 2, 2], figure=fig)
-            
-            # Component overview (color coded by artifact type)
-            ax_overview = fig.add_subplot(gs[0])
-            ax_overview.set_title("ICA Components Classification Overview", fontsize=14, fontweight='bold')
-            ax_overview.set_xlabel("Component Index")
-            ax_overview.set_ylabel("Artifact Type")
-            ax_overview.set_yticks([])
-            
-            # Get component labels from different methods
-            component_labels = {}
-            
-            # Add ICLabel results
-            if "iclabel" in labeled_components:
-                ic_labels = labeled_components["iclabel"]
-                for i, label in enumerate(ic_labels["labels"]):
-                    if i not in component_labels:
-                        component_labels[i] = []
-                    component_labels[i].append(label)
-            
-            # Add correlation results
-            if "correlation" in labeled_components:
-                corr_labels = labeled_components["correlation"]
-                if "eog" in corr_labels:
-                    for i in corr_labels["eog"]:
-                        if i not in component_labels:
-                            component_labels[i] = []
-                        component_labels[i].append("eog")
-                
-                if "ecg" in corr_labels:
-                    for i in corr_labels["ecg"]:
-                        if i not in component_labels:
-                            component_labels[i] = []
-                        component_labels[i].append("ecg")
-            
-            # Plot bars for each component
-            for i in range(n_components):
-                # Default color (no label)
-                color = 'green'  # Default: good component
-                label = 'brain'
-                
-                # Check if this component has labels
-                if i in component_labels:
-                    # Use the first non-brain label
-                    for comp_label in component_labels[i]:
-                        if comp_label != 'brain':
-                            label = comp_label
-                            color = color_map.get(label, 'gray')
-                            break
-                
-                # Mark artifacts
-                if i in all_artifacts:
-                    color = 'black'  # Black border for artifacts
-                    edge_color = 'black'
-                    linewidth = 2
+            # Create a summary label per component based on results from ICLabel and correlation.
+            comp_colors = []
+            for comp in range(n_components):
+                # Default label is brain.
+                label = "brain"
+                if comp in labeled_components.get("iclabel", {}).get("labels", []):
+                    # Use the first non-brain label if available.
+                    cand = labeled_components["iclabel"]["labels"][comp]
+                    if cand != 'brain':
+                        label = cand
+                # If correlation detected an artifact, mark it.
+                if comp in all_artifacts:
+                    # Overwrite with black for artifacts.
+                    comp_colors.append("black")
                 else:
-                    edge_color = 'none'
-                    linewidth = 0
-                
-                ax_overview.bar(i, 1, color=color, alpha=0.7, edgecolor=edge_color, linewidth=linewidth)
-                
-                # Add component number
-                ax_overview.text(i, 0.5, str(i), ha='center', va='center', 
-                              rotation=90, fontsize=8, color='black')
-            
-            # Add legend for artifact types
-            handles = []
-            labels = []
-            
-            # Only add labels that are actually used
-            used_labels = set()
-            for comp_labels in component_labels.values():
-                used_labels.update(comp_labels)
-            
-            for label in ['brain', 'eye', 'heart', 'muscle', 'line_noise', 'channel_noise', 'other', 'eog', 'ecg']:
-                if label in used_labels:
-                    handles.append(plt.Rectangle((0, 0), 1, 1, color=color_map[label], alpha=0.7))
-                    labels.append(label)
-            
-            # Add artifact indicator
-            handles.append(plt.Rectangle((0, 0), 1, 1, facecolor='white', edgecolor='black', linewidth=2))
-            labels.append('marked as artifact')
-            
-            ax_overview.legend(handles, labels, loc='upper right', ncol=len(handles)//2 + 1)
-            
-            # Add ICLabel probability bars if available
-            if "iclabel" in labeled_components:
-                ic_labels = labeled_components["iclabel"]
-                ax_iclabel = fig.add_subplot(gs[1])
-                ax_iclabel.set_title("ICLabel Classification Probabilities", fontsize=14, fontweight='bold')
-                
-                # Set up the x and y axes
-                ax_iclabel.set_xlim(0, n_components)
-                ax_iclabel.set_ylabel("Probability")
-                ax_iclabel.set_ylim(0, 1)
-                
-                # For each component, stack bars for each class probability
-                x = np.arange(n_components)
-                bottoms = np.zeros(n_components)
-                
-                # Sort classes by their "badness" (brain first, then others)
-                sorted_classes = ['brain', 'muscle', 'eye', 'heart', 'line_noise', 'channel_noise', 'other']
-                
-                for class_name in sorted_classes:
-                    if class_name in ic_labels['labels_set']:
-                        class_idx = ic_labels['labels_set'].index(class_name)
-                        probs = [p[class_idx] for p in ic_labels['y_pred_proba']]
-                        ax_iclabel.bar(x, probs, bottom=bottoms, color=color_map[class_name], 
-                                     label=class_name, alpha=0.7)
-                        bottoms += np.array(probs)
-                
-                # Add legend
-                ax_iclabel.legend(loc='upper right', ncol=len(sorted_classes))
-                
-                # Add component numbers
-                for i in range(n_components):
-                    ax_iclabel.text(i, -0.05, str(i), ha='center', va='center', fontsize=8)
-            
-            # Add correlation scores if available
-            if "correlation" in labeled_components and ("eog_scores" in labeled_components["correlation"] or 
-                                                      "ecg_scores" in labeled_components["correlation"]):
-                corr_labels = labeled_components["correlation"]
-                ax_corr = fig.add_subplot(gs[2])
-                ax_corr.set_title("Correlation with EOG/ECG", fontsize=14, fontweight='bold')
-                
-                # Set up the x and y axes
-                ax_corr.set_xlim(0, n_components)
-                ax_corr.set_xlabel("Component Index")
-                ax_corr.set_ylabel("Correlation Score")
-                ax_corr.set_ylim(0, 1)
-                
-                # Add EOG scores
-                if "eog_scores" in corr_labels:
-                    eog_scores = np.zeros(n_components)
-                    for i, score in zip(corr_labels.get("eog", []), corr_labels["eog_scores"]):
-                        eog_scores[i] = score
+                    comp_colors.append(color_map.get(label, "gray"))
                     
-                    ax_corr.bar(x, eog_scores, color=color_map["eog"], alpha=0.7, label="EOG Correlation")
-                
-                # Add ECG scores
-                if "ecg_scores" in corr_labels:
-                    ecg_scores = np.zeros(n_components)
-                    for i, score in zip(corr_labels.get("ecg", []), corr_labels["ecg_scores"]):
-                        ecg_scores[i] = score
-                    
-                    ax_corr.bar(x + 0.3, ecg_scores, color=color_map["ecg"], alpha=0.7, label="ECG Correlation")
-                
-                # Add legend
-                ax_corr.legend(loc='upper right')
-                
-                # Add thresholds
-                thresholds = params["thresholds"]["correlation"]
-                if "eog" in thresholds:
-                    ax_corr.axhline(y=thresholds["eog"], color=color_map["eog"], linestyle='--', alpha=0.7)
-                    ax_corr.text(n_components-1, thresholds["eog"]+0.02, f"EOG threshold: {thresholds['eog']}", 
-                               ha='right', va='bottom', color=color_map["eog"])
-                
-                if "ecg" in thresholds:
-                    ax_corr.axhline(y=thresholds["ecg"], color=color_map["ecg"], linestyle='--', alpha=0.7)
-                    ax_corr.text(n_components-1, thresholds["ecg"]+0.02, f"ECG threshold: {thresholds['ecg']}", 
-                               ha='right', va='bottom', color=color_map["ecg"])
+            ax_overview.bar(np.arange(n_components), [1] * n_components, color=comp_colors)
+            ax_overview.set_yticks([])  # Hide y-axis
             
-            # Save the figure
-            plt.tight_layout()
-            overview_file = os.path.join(labeled_dir, "labeled_components_overview.png")
-            fig.savefig(overview_file, dpi=300)
-            plt.close(fig)
-            logging.info(f"[ICALabelingStep] Saved labeled components overview to {overview_file}")
-            
-            # 2. Generate detailed plots for each labeled artifact component
-            for comp_idx in all_artifacts:
+            fig_file = os.path.join(labeled_dir, "overview.png")
+            fig_overview.tight_layout()
+            fig_overview.savefig(fig_file, dpi=300)
+            all_figs.append(fig_overview)
+            logging.info(f"[ICALabelingStep] Saved overview plot to {fig_file}")
+
+            # ----- Detailed Per-Component Plots -----
+            # For each artifact component, use plot_properties which shows topography, time-series, PSD, and sensor-level properties.
+            for comp_idx in sorted(all_artifacts):
                 try:
-                    fig = plt.figure(figsize=(12, 8))
-                    plt.suptitle(f"Component {comp_idx} - Artifact Details", fontsize=16, fontweight='bold')
-                    
-                    # Create a GridSpec layout
-                    gs = plt.GridSpec(2, 3, figure=fig)
-                    
-                    # Topography
-                    ax_topo = fig.add_subplot(gs[0, 0])
-                    ica.plot_components(comp_idx, axes=ax_topo, show=False, colorbar=False)
-                    
-                    # Time course
-                    ax_time = fig.add_subplot(gs[0, 1:])
-                    sources = ica.get_sources(data)
-                    source_data = sources.get_data()[comp_idx]
-                    times = np.arange(min(10000, len(source_data))) / data.info['sfreq']
-                    ax_time.plot(times, source_data[:len(times)])
-                    ax_time.set_title("Time Course")
-                    ax_time.set_xlabel("Time (s)")
-                    ax_time.set_ylabel("Amplitude")
-                    ax_time.grid(True)
-                    
-                    # PSD
-                    ax_psd = fig.add_subplot(gs[1, 0])
-                    f, Pxx = signal.welch(source_data, fs=data.info['sfreq'], nperseg=min(4096, len(source_data)))
-                    ax_psd.semilogy(f, Pxx)
-                    ax_psd.set_title("Power Spectral Density")
-                    ax_psd.set_xlabel("Frequency (Hz)")
-                    ax_psd.set_ylabel("PSD")
-                    ax_psd.set_xlim([0, min(100, data.info['sfreq']/2)])
-                    ax_psd.grid(True)
-                    
-                    # Label information
-                    ax_info = fig.add_subplot(gs[1, 1:])
-                    ax_info.axis('off')
-                    
-                    info_text = f"Component {comp_idx} - Artifact Details\n\n"
-                    
-                    # Add ICLabel information
-                    if "iclabel" in labeled_components and comp_idx < len(labeled_components["iclabel"]["labels"]):
-                        ic_labels = labeled_components["iclabel"]
-                        label = ic_labels["labels"][comp_idx]
-                        probs = ic_labels["y_pred_proba"][comp_idx]
-                        
-                        info_text += "ICLabel Classification:\n"
-                        for i, class_name in enumerate(ic_labels["labels_set"]):
-                            info_text += f"  {class_name.capitalize()}: {probs[i]:.3f}"
-                            if class_name == label:
-                                info_text += " (selected)"
-                            info_text += "\n"
-                        
-                        info_text += "\n"
-                    
-                    # Add correlation information
-                    if "correlation" in labeled_components:
-                        corr_labels = labeled_components["correlation"]
-                        
-                        if "eog" in corr_labels and comp_idx in corr_labels["eog"]:
-                            idx = corr_labels["eog"].index(comp_idx)
-                            score = corr_labels["eog_scores"][idx]
-                            info_text += f"EOG Correlation Score: {score:.3f}\n"
-                        
-                        if "ecg" in corr_labels and comp_idx in corr_labels["ecg"]:
-                            idx = corr_labels["ecg"].index(comp_idx)
-                            score = corr_labels["ecg_scores"][idx]
-                            info_text += f"ECG Correlation Score: {score:.3f}\n"
-                    
-                    # Add component statistics
-                    mean = np.mean(source_data)
-                    std = np.std(source_data)
-                    skew = np.mean(((source_data - mean) / std) ** 3) if std > 0 else 0
-                    kurtosis = np.mean(((source_data - mean) / std) ** 4) - 3 if std > 0 else 0
-                    
-                    info_text += f"\nComponent Statistics:\n"
-                    info_text += f"  Mean: {mean:.3f}\n"
-                    info_text += f"  Std Dev: {std:.3f}\n"
-                    info_text += f"  Skewness: {skew:.3f}\n"
-                    info_text += f"  Kurtosis: {kurtosis:.3f}\n"
-                    
-                    # Display the text
-                    ax_info.text(0, 1, info_text, va='top', fontfamily='monospace')
-                    
-                    # Save the figure
-                    plt.tight_layout()
-                    fig.savefig(os.path.join(labeled_dir, f"artifact_comp_{comp_idx:03d}.png"), dpi=300)
-                    plt.close(fig)
-                
+                    # Plot component properties; this function creates a multipanel figure.
+                    # It is recommended in MNE examples for detailed component inspection.
+                    fig_props = ica.plot_properties(data, picks=comp_idx, psd_args={'fmax': 50},
+                                                 show=False)
+                    # Save the figure.
+                    comp_file = os.path.join(labeled_dir, f"component_{comp_idx:02d}_properties.png")
+                    fig_props.savefig(comp_file, dpi=300)
+                    all_figs.append(fig_props)
+                    print(f"[ICALabelingStep] Saved detailed plot for component {comp_idx} to {comp_file}")
                 except Exception as e:
-                    logging.error(f"[ICALabelingStep] Error creating detailed plot for component {comp_idx}: {e}")
+                    logging.error(f"[ICALabelingStep] Error plotting properties for component {comp_idx}: {e}")
             
-            logging.info(f"[ICALabelingStep] Saved detailed plots for {len(all_artifacts)} artifact components")
-            
+            # Return list of created figures.
+            return all_figs
+
         except Exception as e:
             logging.error(f"[ICALabelingStep] Error in _plot_labeled_components: {e}")
-    
-    def _plot_before_after(self, data_orig, data_clean, ica, plot_dir, params):
-        """Plot data before and after ICA cleaning."""
-        logging.info("[ICALabelingStep] Plotting data before and after ICA cleaning")
+            return None
+
         
+    def _plot_before_after(self, data_orig, data_clean, ica, plot_dir, params):
+        """
+        Plot data before and after ICA cleaning using robust MNE functions.
+        For raw data, plot overlay using plot; for Epochs, show a representative subset.
+        Also plot PSD using psd_welch.
+        """
+        logging.info("[ICALabelingStep] Plotting data before and after ICA cleaning")
+        all_figs = []
         try:
-            # Create a directory for before/after plots
             ba_dir = os.path.join(plot_dir, "before_after")
             os.makedirs(ba_dir, exist_ok=True)
-            
-            # 1. Plot raw data overlay (before/after)
-            fig, axs = plt.subplots(2, 1, figsize=(15, 10), sharex=True)
-            plt.suptitle("Data Before and After ICA Cleaning", fontsize=16, fontweight='bold')
-            
-            # Before cleaning
-            data_orig.plot(axes=axs[0], duration=10, show=False)
-            axs[0].set_title("Before ICA Cleaning")
-            
-            # After cleaning
-            data_clean.plot(axes=axs[1], duration=10, show=False)
-            axs[1].set_title("After ICA Cleaning")
-            
-            plt.tight_layout()
-            fig.savefig(os.path.join(ba_dir, "raw_before_after.png"), dpi=300)
-            plt.close(fig)
-            
-            # 2. Plot PSD before and after
-            fig, ax = plt.subplots(figsize=(12, 8))
-            
-            # Calculate and plot PSDs
-            data_orig.compute_psd().plot(ax=ax, show=False, average=True, color='red', alpha=0.8, label='Before')
-            data_clean.compute_psd().plot(ax=ax, show=False, average=True, color='blue', alpha=0.8, label='After')
-            
-            ax.set_title("Power Spectral Density: Before vs. After ICA Cleaning")
-            ax.legend()
-            
-            plt.tight_layout()
-            fig.savefig(os.path.join(ba_dir, "psd_before_after.png"), dpi=300)
-            plt.close(fig)
-            
-            # 3. Plot time-frequency representation
-            try:
-                from mne.time_frequency import tfr_multitaper
-                
-                # Select a subset of channels that are most affected
-                ch_picks = []
-                
-                # Find channels most affected by excluded components
-                if ica.exclude:
-                    patterns = ica.get_components()[:, ica.exclude]
-                    if patterns.size > 0:
-                        # Sum absolute values across components
-                        pattern_sum = np.sum(np.abs(patterns), axis=1)
-                        # Get top 5 channels
-                        top_ch_idx = np.argsort(pattern_sum)[-5:]
-                        ch_picks = [data_orig.ch_names[i] for i in top_ch_idx]
-                
-                # If no specific channels selected, use a default selection
-                if not ch_picks:
-                    ch_picks = data_orig.ch_names[:5]  # First 5 channels
-                
-                # Compute TFR for original and cleaned data
-                freqs = np.logspace(np.log10(4), np.log10(40), 20)  # Frequencies from 4-40 Hz
-                n_cycles = freqs / 2.  # Different number of cycles per frequency
-                
-                power_orig = tfr_multitaper(data_orig, freqs=freqs, n_cycles=n_cycles, 
-                                         picks=ch_picks, return_itc=False, average=False)
-                power_clean = tfr_multitaper(data_clean, freqs=freqs, n_cycles=n_cycles, 
-                                          picks=ch_picks, return_itc=False, average=False)
-                
-                # Plot TFR for each selected channel
-                for ch_idx, ch_name in enumerate(ch_picks):
-                    fig, axs = plt.subplots(2, 1, figsize=(12, 10), sharex=True, sharey=True)
-                    
-                    # Original data
-                    power_orig.plot([ch_idx], baseline=None, mode='logratio', title=f"{ch_name}: Before ICA",
-                                  axes=axs[0], show=False)
-                    
-                    # Cleaned data
-                    power_clean.plot([ch_idx], baseline=None, mode='logratio', title=f"{ch_name}: After ICA",
-                                   axes=axs[1], show=False)
-                    
-                    plt.suptitle(f"Time-Frequency Representation: {ch_name}", fontsize=16, fontweight='bold')
-                    plt.tight_layout()
-                    
-                    fig.savefig(os.path.join(ba_dir, f"tfr_{ch_name}.png"), dpi=300)
-                    plt.close(fig)
-                
-            except Exception as e:
-                logging.warning(f"[ICALabelingStep] Error creating TFR plots: {e}")
-            
-            # 4. Plot specific artifact segments (if found)
-            # For EOG artifacts
-            try:
-                if "ica_labeled" in data_clean.info.get("temp", {}) and "labeled_components" in data_clean.info["temp"]["ica_labeled"]:
-                    labeled = data_clean.info["temp"]["ica_labeled"]["labeled_components"]
-                    
-                    # Plot EOG artifact segments if found
-                    if "correlation" in labeled and "eog" in labeled["correlation"] and labeled["correlation"]["eog"]:
-                        # Create a figure comparing before/after on a segment with eye blinks
-                        eog_picks = params.get("eog_ch_names", ["Fp1", "Fp2"])
-                        if not all(ch in data_orig.ch_names for ch in eog_picks):
-                            # Find frontal channels if specified EOG not available
-                            frontal_chs = ["Fp1", "Fp2", "F7", "F8", "F3", "F4", "Fz"]
-                            eog_picks = [ch for ch in frontal_chs if ch in data_orig.ch_names][:2]
-                        
-                        if eog_picks:
-                            # Find a segment with eye blinks
-                            # This is a simplified approach - in a real implementation, 
-                            # you might want to use peak detection on EOG channels
-                            eog_data = data_orig.copy().pick_channels(eog_picks)
-                            eog_data.filter(1, 10)  # Filter to enhance eye blinks
-                            times = eog_data.times
-                            eog_signal = eog_data.get_data()[0]
-                            
-                            # Get the time of maximum amplitude as a proxy for blink
-                            max_idx = np.argmax(np.abs(eog_signal))
-                            blink_time = times[max_idx]
-                            
-                            # Plot a window around this time
-                            window_sec = 2  # seconds on each side
-                            start_time = max(0, blink_time - window_sec)
-                            
-                            fig, axs = plt.subplots(2, 1, figsize=(12, 8), sharex=True)
-                            
-                            # Before cleaning
-                            data_orig.plot(axes=axs[0], duration=window_sec*2, start=start_time, show=False)
-                            axs[0].set_title("Eye Blink Artifact: Before Cleaning")
-                            
-                            # After cleaning
-                            data_clean.plot(axes=axs[1], duration=window_sec*2, start=start_time, show=False)
-                            axs[1].set_title("Eye Blink Artifact: After Cleaning")
-                            
-                            plt.tight_layout()
-                            fig.savefig(os.path.join(ba_dir, "eog_artifact_removal.png"), dpi=300)
-                            plt.close(fig)
-            
-            except Exception as e:
-                logging.warning(f"[ICALabelingStep] Error creating artifact segment plots: {e}")
-            
-            logging.info(f"[ICALabelingStep] Saved before/after plots to {ba_dir}")
+            print(f"[ICALabelingStep] Saving before/after plots to: {os.path.abspath(ba_dir)}")
+        
+            # ----- Raw Data or Evoked -----
+            if not isinstance(data_orig, mne.BaseEpochs):
+                fig_raw, ax_raw = plt.subplots(2, 1, figsize=(15, 10), sharex=True)
+                ax_raw[0].set_title("Before ICA Cleaning")
+                data_orig.plot(duration=10, show=False, axes=ax_raw[0])
+                ax_raw[1].set_title("After ICA Cleaning")
+                data_clean.plot(duration=10, show=False, axes=ax_raw[1])
+            else:
+                # For Epochs, plot a representative average of a few epochs.
+                fig_raw, ax_raw = plt.subplots(1, 2, figsize=(15, 5))
+                avg_before = data_orig.average()
+                avg_after = data_clean.average()
+                avg_before.plot(axes=ax_raw[0], show=False, time_unit='s')
+                ax_raw[0].set_title("Average Before ICA Cleaning")
+                avg_after.plot(axes=ax_raw[1], show=False, time_unit='s')
+                ax_raw[1].set_title("Average After ICA Cleaning")
+        
+            fig_raw.tight_layout()
+            raw_file = os.path.join(ba_dir, "raw_before_after.png")
+            fig_raw.savefig(raw_file, dpi=300)
+            all_figs.append(fig_raw)
+            logging.info(f"[ICALabelingStep] Saved raw before/after plot to {raw_file}")
+        
+            # ----- PSD Comparison -----
+            # Use mne.time_frequency.psd_welch to compute and plot PSDs.
+            fig_psd, ax_psd = plt.subplots(figsize=(12, 8))
+            psds_orig, freqs_orig = mne.time_frequency.psd_welch(data_orig, n_per_seg=4096, average=True)
+            psds_clean, freqs_clean = mne.time_frequency.psd_welch(data_clean, n_per_seg=4096, average=True)
+            ax_psd.semilogy(freqs_orig, np.mean(psds_orig, axis=0), color='red', alpha=0.8, label='Before')
+            ax_psd.semilogy(freqs_clean, np.mean(psds_clean, axis=0), color='blue', alpha=0.8, label='After')
+            ax_psd.set_title("PSD: Before vs. After ICA Cleaning")
+            ax_psd.set_xlabel("Frequency (Hz)")
+            ax_psd.set_ylabel("Power Spectral Density")
+            ax_psd.legend()
+        
+            fig_psd.tight_layout()
+            psd_file = os.path.join(ba_dir, "psd_before_after.png")
+            fig_psd.savefig(psd_file, dpi=300)
+            all_figs.append(fig_psd)
+            logging.info(f"[ICALabelingStep] Saved PSD before/after plot to {psd_file}")
+        
+            return all_figs
             
         except Exception as e:
-            logging.error(f"[ICALabelingStep] Error in _plot_before_after: {e}") 
+            logging.error(f"[ICALabelingStep] Error in _plot_before_after: {e}")
+            return None

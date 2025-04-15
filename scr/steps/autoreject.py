@@ -80,7 +80,7 @@ class AutoRejectStep(BaseStep):
         save_cleaned_data = self.params.get("save_cleaned_data", False)
         file_prefix = self.params.get("file_prefix", "autoreject")
         output_dir = self.params.get("output_dir", None)
-        store_reject_log = self.params.get("store_reject_log", True)
+        store_reject_log = self.params.get("store_reject_log", False)
         save_model = self.params.get("save_model", False)
         model_filename = self.params.get("model_filename", None)
         
@@ -179,7 +179,7 @@ class AutoRejectStep(BaseStep):
         # Generate simple visualization if requested
         if plot_results:
             self._create_simple_visualization(reject_log, data, ar, plot_dir, interactive)
-        
+            self._plot_channel_rejection_rates(reject_log, data, plot_dir, interactive)
         # Save the cleaned data if requested
         if save_cleaned_data:
             self._save_cleaned_data(cleaned_data, file_prefix, output_dir)
@@ -309,7 +309,6 @@ class AutoRejectStep(BaseStep):
             # Show the plot interactively if requested
             if interactive:
                 plt.show()
-                input("[AutoRejectStep] Press Enter after reviewing the rejection plot...")
             
             # Save the plot
             sub_id = getattr(self.params, "subject_id", "unknown")
@@ -362,7 +361,6 @@ class AutoRejectStep(BaseStep):
                     # Show the plot interactively if requested
                     if interactive:
                         plt.show()
-                        input("[AutoRejectStep] Press Enter after reviewing the thresholds plot...")
                     
                     # Save the plot
                     plt.savefig(os.path.join(plot_dir, f"autoreject_{sub_id}_{ses_id}_run-{run_id}_thresholds.png"), dpi=150)
@@ -376,7 +374,191 @@ class AutoRejectStep(BaseStep):
             logging.warning(f"[AutoRejectStep] Error creating visualization: {e}")
             if 'plt' in locals() and plt.get_fignums():
                 plt.close()  # Close any open figures
-
+    def _plot_channel_rejection_rates(self, reject_log, raw, plot_dir=None, interactive=False):
+        """
+        Creates a detailed visualization of channel-wise rejection rates
+        
+        Parameters
+        ----------
+        reject_log : instance of autoreject.RejectLog
+            The rejection log from AutoReject
+        raw : instance of mne.io.Raw or mne.Epochs
+            The data that was processed
+        plot_dir : str or None
+            Directory to save plots
+        interactive : bool
+            Whether to show plots interactively
+        """
+        try:
+            # Get channel names
+            ch_names = raw.ch_names
+            
+            # Filter out trigger/stim channels by name or type
+            ch_types = raw.get_channel_types() if hasattr(raw, 'get_channel_types') else []
+            excluded_channels = []
+            
+            # Try to identify trigger channels by name
+            trigger_keywords = ['trigger', 'stim', 'sti', 'event', 'status']
+            
+            # If we have channel types, use that to identify stim channels
+            if ch_types:
+                for idx, (ch_name, ch_type) in enumerate(zip(ch_names, ch_types)):
+                    if ch_type == 'stim' or any(keyword in ch_name.lower() for keyword in trigger_keywords):
+                        excluded_channels.append(ch_name)
+            else:
+                # Otherwise, just use name-based detection
+                for ch_name in ch_names:
+                    if any(keyword in ch_name.lower() for keyword in trigger_keywords):
+                        excluded_channels.append(ch_name)
+            
+            # Log which channels we're excluding
+            if excluded_channels:
+                logging.info(f"[AutoRejectStep] Excluding trigger/stim channels from rejection plot: {excluded_channels}")
+            
+            # Calculate rejection rates per channel
+            ch_rejection_rates = {}
+            
+            # Check if we have channel-wise information
+            if hasattr(reject_log, 'labels') and reject_log.labels is not None:
+                # Loop through all epochs and channels
+                for ch_idx, ch_name in enumerate(ch_names):
+                    # Skip excluded channels
+                    if ch_name in excluded_channels:
+                        continue
+                        
+                    # Count rejected instances for this channel
+                    if ch_idx < reject_log.labels.shape[1]:  # Make sure index is valid
+                        # Count epochs where this channel was marked for rejection
+                        # Exclude completely rejected epochs to focus on channel-specific issues
+                        
+                        # Convert arrays to bool type before bitwise operations
+                        ch_labels = reject_log.labels[:, ch_idx].astype(bool)
+                        bad_epochs = reject_log.bad_epochs.astype(bool)
+                        
+                        # Now perform the bitwise operations on boolean arrays
+                        ch_bad_count = np.sum(ch_labels & ~bad_epochs)
+                        total_epochs = len(reject_log.labels)
+                   
+                        # Calculate rejection percentage
+                        if total_epochs > 0:
+                            rejection_rate = (ch_bad_count / total_epochs) * 100
+                        else:
+                            rejection_rate = 0.0
+                            
+                        ch_rejection_rates[ch_name] = rejection_rate
+            
+            # If no channel-wise data, try to use the channel thresholds as a proxy
+            if not ch_rejection_rates and hasattr(reject_log, 'threshes') and reject_log.threshes is not None:
+                for ch_idx, ch_name in enumerate(ch_names):
+                    # Skip excluded channels
+                    if ch_name in excluded_channels:
+                        continue
+                        
+                    # Higher thresholds might indicate more problematic channels
+                    # This is an approximation since we don't have actual rejection counts
+                    if ch_idx < len(reject_log.threshes) and reject_log.threshes[ch_idx] is not None:
+                        # Normalize thresholds to a 0-100 scale for visualization
+                        max_thresh = np.max([t for t in reject_log.threshes if t is not None])
+                        norm_thresh = (reject_log.threshes[ch_idx] / max_thresh) * 100 if max_thresh > 0 else 0
+                        ch_rejection_rates[ch_name] = norm_thresh
+            
+            # If we still don't have data, check the AutoReject scores
+            if not ch_rejection_rates and hasattr(reject_log, 'scores') and reject_log.scores is not None:
+                for ch_idx, ch_name in enumerate(ch_names):
+                    # Skip excluded channels
+                    if ch_name in excluded_channels:
+                        continue
+                        
+                    if ch_idx < reject_log.scores.shape[1]:
+                        # Use mean scores as proxy for rejection rate
+                        mean_score = np.mean(reject_log.scores[:, ch_idx]) * 100  # Scale to percentage
+                        ch_rejection_rates[ch_name] = mean_score
+            
+            # If we still don't have channel data, we can't create this plot
+            if not ch_rejection_rates:
+                logging.warning("[AutoRejectStep] No channel-wise rejection data available for visualization")
+                return
+            
+            # Sort channels by rejection rate (highest to lowest)
+            sorted_channels = sorted(ch_rejection_rates.items(), key=lambda x: x[1], reverse=True)
+            
+            # Create figure
+            plt.figure(figsize=(12, max(8, len(ch_rejection_rates)/3)))  # Adjust height based on channel count
+            
+            # Set up channel names and rejection rates
+            channels = [ch[0] for ch in sorted_channels]
+            rates = [ch[1] for ch in sorted_channels]
+            
+            # Create color map based on rejection rates
+            colors = []
+            for rate in rates:
+                if rate < 20:
+                    colors.append('green')  # Good channels (low rejection)
+                elif rate < 50:
+                    colors.append('yellowgreen')  # Warning channels
+                else:
+                    colors.append('salmon')  # Problematic channels (high rejection)
+            
+            # Create horizontal bar chart
+            y_pos = np.arange(len(channels))
+            bars = plt.barh(y_pos, rates, align='center', color=colors, alpha=0.7)
+            
+            # Add rejection percentages as text labels
+            for i, bar in enumerate(bars):
+                width = bar.get_width()
+                if width > 0:
+                    plt.text(max(5, min(width + 2, 95)), 
+                            bar.get_y() + bar.get_height()/2,
+                            f"{width:.1f}%", 
+                            va='center',
+                            fontsize=9)
+            
+            # Add 50% threshold line
+            plt.axvline(x=50, color='red', linestyle='--', alpha=0.7, 
+                    label='50% threshold (potentially problematic channels)')
+            
+            # Add shaded region for potentially problematic area
+            plt.axvspan(50, 100, alpha=0.1, color='red')
+            
+            # Set labels and title
+            plt.yticks(y_pos, channels)
+            plt.xlabel('Rejection Rate (%)')
+            plt.title('Channel-wise Rejection Rates')
+            plt.xlim(0, 100)
+            
+            # Add a text box with potentially problematic channels
+            problematic_chs = [ch for ch, rate in sorted_channels if rate >= 50]
+            if problematic_chs:
+                problematic_text = "Potentially problematic channels:\n" + "\n".join(problematic_chs)
+                plt.text(55, 5, problematic_text, fontsize=10, 
+                        bbox=dict(facecolor='white', alpha=0.8, boxstyle='round,pad=0.5'))
+            
+            plt.tight_layout()
+            
+            # Show interactively if requested
+            if interactive:
+                plt.show()
+            
+            # Save the plot
+            sub_id = getattr(self.params, "subject_id", "unknown")
+            ses_id = getattr(self.params, "session_id", "unknown")
+            run_id = getattr(self.params, "run_id", "01")
+            
+            if plot_dir is None:
+                plot_dir = f"./data/processed/sub-{sub_id}/ses-{ses_id}/figures/autoreject"
+            os.makedirs(plot_dir, exist_ok=True)
+            
+            plt.savefig(os.path.join(plot_dir, f"autoreject_{sub_id}_{ses_id}_run-{run_id}_channel_rejection_rates.png"), dpi=150)
+            plt.close()
+            
+            logging.info(f"[AutoRejectStep] Saved channel rejection rates visualization to {plot_dir}")
+            
+        except Exception as e:
+            logging.warning(f"[AutoRejectStep] Error creating channel rejection rates visualization: {e}")
+            import traceback
+            logging.warning(traceback.format_exc())
+            if 'plt' in locals() and plt.get_fignums():
+                plt.close()  # Close any open figures
     def _save_cleaned_data(self, data, file_prefix, output_dir):
         """Save cleaned data to disk."""
         try:

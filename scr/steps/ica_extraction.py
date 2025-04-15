@@ -9,6 +9,7 @@ import os
 import numpy as np
 import matplotlib.pyplot as plt
 from scipy import signal
+import sys
 
 # Set environment variable to use software rendering if OpenGL_accelerate is not available
 os.environ['MNE_3D_OPTION_ANTIALIAS'] = 'false'
@@ -154,12 +155,22 @@ class ICAExtractionStep(BaseStep):
         run_id = params.get("run_id", None)
         paths = params.get("paths", None)
         
+        # Collection to store figures for display in notebook
+        self.figures = []
+        
         # --------------------------
         # Configure matplotlib backend for plotting
         # --------------------------
         original_backend = matplotlib.get_backend()
+        # For Jupyter notebooks, it's better to use inline backend
+        if not params["interactive"] and 'ipykernel' in sys.modules:
+            try:
+                logging.info("[ICAExtractionStep] Jupyter environment detected, using inline backend")
+                matplotlib.use('inline')
+            except Exception as e:
+                logging.warning(f"[ICAExtractionStep] Could not switch to inline backend: {e}")
         # Check if we need to switch backends for interactive plotting
-        if params["interactive"]:
+        elif params["interactive"]:
             try:
                 # Try to switch to TkAgg for interactive plots
                 if original_backend != 'TkAgg' and original_backend != 'Qt5Agg' and original_backend != 'WXAgg':
@@ -286,37 +297,6 @@ class ICAExtractionStep(BaseStep):
         os.makedirs(plot_dir, exist_ok=True)
         logging.info(f"[ICAExtractionStep] Saving plots to {plot_dir}")
         
-        # Generate component topography plots
-        if params["plot_components"]:
-            self._plot_component_topographies(ica, plot_dir, params)
-        
-        # Generate source time courses
-        if params["plot_sources"]:
-            self._plot_source_timecourses(ica, data, plot_dir, params)
-            
-        # Generate detailed component property plots
-        if params["plot_properties"]:
-            self._plot_component_properties(ica, good_epochs, plot_dir, params)
-            
-        # Generate PSD plots for each component
-        if params["plot_psd"]:
-            self._plot_component_psd(ica, data, plot_dir, params)
-            
-        # # Generate overlay plots to compare original and reconstructed data
-        # if params["plot_overlay"]:
-        #     self._plot_data_overlay(ica, data, plot_dir, params)
-            
-        # Generate component details page with all plots
-        # self._generate_component_details(ica, data, good_epochs, plot_dir, params)
-        
-        # Only generate component details if specifically requested
-        if params.get("plot_details", False):
-            try:
-                self._generate_component_details(ica, data, good_epochs, plot_dir, params)
-            except Exception as e:
-                logging.error(f"[ICAExtractionStep] Error generating component details: {e}")
-                logging.error("[ICAExtractionStep] Continuing without component details")
-        
         # --------------------------
         # 5) Fit ICA
         # --------------------------
@@ -336,6 +316,46 @@ class ICAExtractionStep(BaseStep):
             logging.error("[ICAExtractionStep] ICA extraction failed")
             return data
         
+        # Generate component topography plots
+        if params["plot_components"]:
+            topo_figs = self._plot_component_topographies(ica, plot_dir, params)
+            if topo_figs:
+                self.figures.extend(topo_figs)
+        
+        # Generate source time courses
+        if params["plot_sources"]: 
+            source_figs = self._plot_source_timecourses(ica, data, plot_dir, params)
+            if source_figs:
+                self.figures.extend(source_figs)
+            
+        # Generate detailed component property plots
+        if params["plot_properties"]:
+            prop_figs = self._plot_component_properties(ica, good_epochs, plot_dir, params)
+            if prop_figs:
+                self.figures.extend(prop_figs)
+            
+        # Generate PSD plots for each component
+        if params["plot_psd"]:
+            psd_figs = self._plot_component_psd(ica, data, plot_dir, params)
+            if psd_figs:
+                self.figures.extend(psd_figs)
+            
+        # # Generate overlay plots to compare original and reconstructed data
+        # if params["plot_overlay"]:
+        #     self._plot_data_overlay(ica, data, plot_dir, params)
+            
+        # Generate component details page with all plots
+        # self._generate_component_details(ica, data, good_epochs, plot_dir, params)
+        
+        # Only generate component details if specifically requested
+        if params.get("plot_details", False):
+            try:
+                self._generate_component_details(ica, data, good_epochs, plot_dir, params)
+            except Exception as e:
+                logging.error(f"[ICAExtractionStep] Error generating component details: {e}")
+                logging.error("[ICAExtractionStep] Continuing without component details")
+        
+
         # --------------------------
         # 6) Save ICA solution
         # --------------------------
@@ -343,16 +363,17 @@ class ICAExtractionStep(BaseStep):
             try:
                 # Use normalized path handling for Windows compatibility
                 ica_dir = os.path.normpath(os.path.dirname(str(paths.get_derivative_path(sub_id, ses_id))))
-                ica_filename = f'sub-{sub_id}_ses-{ses_id}_desc-ica_decomposition.fif'
+                ica_filename = f'sub-{sub_id}_ses-{ses_id}_task-{task_id}_run-{run_id}_desc-ica_decomposition.fif'
                 ica_file = os.path.join(ica_dir, ica_filename)
                 
                 # Ensure directory exists
                 os.makedirs(os.path.dirname(ica_file), exist_ok=True)
                 
+                # Clean the ICA object to ensure it can be serialized
+                ica_clean = ica.copy()                
                 # Save without using paths for the final save
                 logging.info(f"[ICAExtractionStep] Saving ICA decomposition to {ica_file}")
-                ica.save(ica_file, overwrite=True)
-                logging.info(f"[ICAExtractionStep] Successfully saved ICA decomposition")
+                ica_clean.save(ica_file, overwrite=True)
             except Exception as e:
                 logging.error(f"[ICAExtractionStep] Error saving ICA decomposition: {e}")
                 logging.error("[ICAExtractionStep] Continuing without saving ICA decomposition")
@@ -381,18 +402,13 @@ class ICAExtractionStep(BaseStep):
                 # Make a clean copy of the data to save
                 data_to_save = data.copy()
                 
-                # Remove all complex objects from info dict
-                if 'temp' in data_to_save.info:
-                    del data_to_save.info['temp']
-                
-                # CRITICAL: Create a completely new subject_info dictionary with only string values
-                # This is needed to avoid the "data type '>a' not understood" error
-                data_to_save.info['subject_info'] = {'his_id': f"sub-{sub_id}"}
-                
                 # Save the data
                 logging.info(f"[ICAExtractionStep] Saving data with ICA components to {file_path}")
-                data_to_save.save(file_path, overwrite=True)
-                logging.info(f"[ICAExtractionStep] Successfully saved data")
+                try:
+                    data_to_save.save(file_path, overwrite=True)
+                    logging.info(f"[ICAExtractionStep] Successfully saved data")
+                except Exception as save_err:
+                    logging.error(f"[ICAExtractionStep] Error in data save operation: {save_err}")
             except Exception as e:
                 logging.error(f"[ICAExtractionStep] Error saving data with ICA components: {e}")
                 logging.error("[ICAExtractionStep] Continuing without saving data")
@@ -411,6 +427,13 @@ class ICAExtractionStep(BaseStep):
             data.info['temp'] = {}
         data.info['temp']['ica'] = ica
         
+        # Display figures in notebook if running in Jupyter
+        if 'ipykernel' in sys.modules and self.figures:
+            for fig in self.figures:
+                if fig is not None:
+                    plt.figure(fig.number)
+                    plt.show()
+        
         return data
     
     def _plot_component_topographies(self, ica, plot_dir, params):
@@ -422,79 +445,68 @@ class ICAExtractionStep(BaseStep):
             topo_dir = os.path.join(plot_dir, "topographies")
             os.makedirs(topo_dir, exist_ok=True)
             
-            # Plot all components in one figure
-            n_components = ica.n_components_
+            # Get number of components, with fallbacks for different ICA implementations
+            if hasattr(ica, 'n_components_'):
+                n_components = ica.n_components_
+            elif hasattr(ica, 'n_components'):
+                n_components = ica.n_components
+            else:
+                # As a last resort, try to determine from the mixing matrix shape
+                n_components = ica.mixing_matrix_.shape[1] if hasattr(ica, 'mixing_matrix_') else 20
+                logging.warning(f"[ICAExtractionStep] Could not determine n_components, using: {n_components}")
+            
             n_per_plot = min(20, n_components)  # Maximum 20 components per plot
+            all_figs = []
             
             for start_idx in range(0, n_components, n_per_plot):
                 end_idx = min(start_idx + n_per_plot, n_components)
                 picks = list(range(start_idx, end_idx))
                 
-                if params["interactive"]:
-                    try:
-                        logging.info(f"[ICAExtractionStep] Plotting components {start_idx}-{end_idx-1}")
-                        fig = ica.plot_components(picks=picks, show=True)
-                        if isinstance(fig, list):
-                            for i, f in enumerate(fig):
-                                plt.close(f)
-                        else:
-                            plt.close(fig)
-                    except Exception as e:
-                        logging.warning(f"[ICAExtractionStep] Interactive component plotting failed: {e}")
+                # Create the plot
+                fig = ica.plot_components(picks=picks, show=False)
                 
-                # Always save the plot to file
-                try:
-                    fig = ica.plot_components(picks=picks, show=False)
-                    if isinstance(fig, list):
-                        for i, f in enumerate(fig):
-                            f.savefig(os.path.join(topo_dir, f"components_{start_idx+i:03d}.png"), dpi=300)
-                            plt.close(f)
-                    else:
-                        fig.savefig(os.path.join(topo_dir, f"components_{start_idx:03d}-{end_idx-1:03d}.png"), dpi=300)
-                        plt.close(fig)
-                except Exception as e:
-                    logging.error(f"[ICAExtractionStep] Error saving component topography plot: {e}")
+                # Store the figure for display in notebook
+                if isinstance(fig, list):
+                    all_figs.extend(fig)
+                else:
+                    all_figs.append(fig)
+                
+                # Save the figure to file without closing it
+                if isinstance(fig, list):
+                    for i, f in enumerate(fig):
+                        f.savefig(os.path.join(topo_dir, f"components_{start_idx+i:03d}.png"), dpi=300)
+                else:
+                    fig.savefig(os.path.join(topo_dir, f"components_{start_idx:03d}-{end_idx-1:03d}.png"), dpi=300)
+                
+                # Don't close the figure so it can be displayed in the notebook
+                # In interactive mode, you might want to show it too
+                if params["interactive"]:
+                    plt.show()
         
         except Exception as e:
             logging.error(f"[ICAExtractionStep] Error in _plot_component_topographies: {e}")
+            
+        # Return the figures for display in notebook
+        return all_figs
     
     def _plot_source_timecourses(self, ica, data, plot_dir, params):
         """Generate plots of ICA source time courses."""
         logging.info("[ICAExtractionStep] Generating source time course plots")
+        
+        all_figs = []
         
         try:
             # Create a directory for source time courses
             sources_dir = os.path.join(plot_dir, "sources")
             os.makedirs(sources_dir, exist_ok=True)
             
-            if params["interactive"]:
-                try:
-                    logging.info("[ICAExtractionStep] Plotting source time courses interactively")
-                    fig = ica.plot_sources(data, show=True)
-                    plt.close(fig)
-                except Exception as e:
-                    logging.warning(f"[ICAExtractionStep] Interactive source plotting failed: {e}")
+            # Create the sources plot
+            fig = ica.plot_sources(data, show=False)
+            all_figs.append(fig)
             
-            # Always save the plot to file
+            # Save the plot to file without closing it
             try:
-                # Set non-interactive backend temporarily if we're having Qt issues
-                if 'Qt' in str(matplotlib.get_backend()):
-                    try:
-                        import matplotlib
-                        temp_backend = matplotlib.get_backend()
-                        matplotlib.use('Agg')
-                        fig = ica.plot_sources(data, show=False)
-                        fig.savefig(os.path.join(sources_dir, "sources_all.png"), dpi=300)
-                        plt.close(fig)
-                        # Restore original backend
-                        matplotlib.use(temp_backend)
-                    except Exception as e:
-                        logging.error(f"[ICAExtractionStep] Error with backend switch for source plot: {e}")
-                else:
-                    # Standard approach
-                    fig = ica.plot_sources(data, show=False)
-                    fig.savefig(os.path.join(sources_dir, "sources_all.png"), dpi=300)
-                    plt.close(fig)
+                fig.savefig(os.path.join(sources_dir, "sources_all.png"), dpi=300)
             except Exception as e:
                 logging.error(f"[ICAExtractionStep] Error saving source time course plot: {e}")
                 
@@ -519,7 +531,7 @@ class ICAExtractionStep(BaseStep):
                             ax.set_ylabel('Amplitude')
                             fig.tight_layout()
                             fig.savefig(os.path.join(sources_dir, f"source_{comp_idx:03d}.png"), dpi=300)
-                            plt.close(fig)
+                            all_figs.append(fig)
                         except Exception as e:
                             logging.error(f"[ICAExtractionStep] Error plotting individual source {comp_idx}: {e}")
                 
@@ -537,7 +549,7 @@ class ICAExtractionStep(BaseStep):
                             ax.set_ylabel('Amplitude')
                             fig.tight_layout()
                             fig.savefig(os.path.join(sources_dir, f"source_{comp_idx:03d}.png"), dpi=300)
-                            plt.close(fig)
+                            all_figs.append(fig)
                         except Exception as e:
                             logging.error(f"[ICAExtractionStep] Error plotting individual source {comp_idx}: {e}")
                 
@@ -546,13 +558,23 @@ class ICAExtractionStep(BaseStep):
                     
             except Exception as e:
                 logging.error(f"[ICAExtractionStep] Error creating individual source plots: {e}")
+            
+            # In interactive mode, show the plots
+            if params["interactive"]:
+                for fig in all_figs:
+                    plt.figure(fig.number)
+                    plt.show()
                     
         except Exception as e:
             logging.error(f"[ICAExtractionStep] Error in _plot_source_timecourses: {e}")
+            
+        return all_figs
     
     def _plot_component_properties(self, ica, epochs, plot_dir, params):
         """Generate detailed plots of component properties."""
         logging.info("[ICAExtractionStep] Generating component property plots")
+        
+        all_figs = []
         
         try:
             # Create a directory for component properties
@@ -563,32 +585,33 @@ class ICAExtractionStep(BaseStep):
                 try:
                     logging.info(f"[ICAExtractionStep] Plotting properties for component {comp_idx}")
                     
-                    if params["interactive"]:
-                        try:
-                            figs = ica.plot_properties(epochs, picks=comp_idx, show=True)
-                            for fig in figs:
-                                plt.close(fig)
-                        except Exception as e:
-                            logging.warning(f"[ICAExtractionStep] Interactive property plotting failed for component {comp_idx}: {e}")
+                    # Generate the property plots
+                    figs = ica.plot_properties(epochs, picks=comp_idx, show=False)
                     
-                    # Always save the plots to files
-                    try:
-                        figs = ica.plot_properties(epochs, picks=comp_idx, show=False)
-                        for i, fig in enumerate(figs):
-                            fig.savefig(os.path.join(props_dir, f"comp_{comp_idx:03d}_property_{i}.png"), dpi=300)
-                            plt.close(fig)
-                    except Exception as e:
-                        logging.error(f"[ICAExtractionStep] Error saving property plots for component {comp_idx}: {e}")
+                    # Save the plots to files and collect them
+                    for i, fig in enumerate(figs):
+                        fig.savefig(os.path.join(props_dir, f"comp_{comp_idx:03d}_property_{i}.png"), dpi=300)
+                        all_figs.append(fig)
+                    
+                    # In interactive mode, show the plots
+                    if params["interactive"]:
+                        for fig in figs:
+                            plt.figure(fig.number)
+                            plt.show()
                 
                 except Exception as e:
                     logging.error(f"[ICAExtractionStep] Error processing properties for component {comp_idx}: {e}")
                     
         except Exception as e:
             logging.error(f"[ICAExtractionStep] Error in _plot_component_properties: {e}")
+            
+        return all_figs
     
     def _plot_component_psd(self, ica, data, plot_dir, params):
         """Generate PSD plots for each component."""
         logging.info("[ICAExtractionStep] Generating component PSD plots")
+        
+        all_figs = []
         
         try:
             # Create a directory for PSD plots
@@ -608,7 +631,7 @@ class ICAExtractionStep(BaseStep):
                 source_data_array = sources.get_data()
             else:
                 logging.warning(f"[ICAExtractionStep] Unsupported data type for PSD plots: {type(sources)}")
-                return
+                return all_figs
                 
             # Create plots comparing PSDs of all components
             try:
@@ -630,7 +653,7 @@ class ICAExtractionStep(BaseStep):
                 
                 fig.tight_layout()
                 fig.savefig(os.path.join(psd_dir, "all_components_psd.png"), dpi=300)
-                plt.close(fig)
+                all_figs.append(fig)
             except Exception as e:
                 logging.error(f"[ICAExtractionStep] Error creating combined PSD plot: {e}")
             
@@ -681,12 +704,20 @@ class ICAExtractionStep(BaseStep):
                     
                     fig.tight_layout()
                     fig.savefig(os.path.join(psd_dir, f"comp_{comp_idx:03d}_psd.png"), dpi=300)
-                    plt.close(fig)
+                    all_figs.append(fig)
                 except Exception as e:
                     logging.error(f"[ICAExtractionStep] Error creating PSD plot for component {comp_idx}: {e}")
+            
+            # In interactive mode, show the plots
+            if params["interactive"]:
+                for fig in all_figs:
+                    plt.figure(fig.number)
+                    plt.show()
                     
         except Exception as e:
             logging.error(f"[ICAExtractionStep] Error in _plot_component_psd: {e}")
+            
+        return all_figs
     
     def _plot_data_overlay(self, ica, data, plot_dir, params):
         """Generate overlay plots to compare original and component-projected data."""

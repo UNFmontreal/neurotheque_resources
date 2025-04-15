@@ -124,31 +124,39 @@ class EpochingStep(BaseStep):
             if save_plots:
                 self._save_figures(figures, plot_params.get("save_dir", None))
         
-        # Visualize the detected events to verify correct detection
-        if self.params.get("visualize_events", False):
-            # Get visualization parameters
-            plot_params = self.params.get("plot_params", {})
-            duration = plot_params.get("duration", 10.0)  # Default: 10s window
-            tstart = plot_params.get("tstart", 0.0)       # Default: start at 0s
-            interactive = plot_params.get("interactive", False)  # Default: non-interactive
-            save_fig = {
-                'save': plot_params.get("save_plots", False),
-                'dir': plot_params.get("save_dir", "figures/events")
-            }
-            
-            # Use the simple plot function with new parameters
-            fig = self.plot_events_simple(
-                data, 
-                events, 
-                stim_channel,
-                duration=duration,
-                tstart=tstart,
-                save_fig=save_fig,
-                interactive=interactive
-            )
-            
-            if fig:
-                logging.info(f"[EpochingStep] Simple event visualization created: {duration}s window from {tstart}s")
+        # # Visualize the detected events to verify correct detection
+        # if self.params.get("visualize_events", False):
+        #     # We need to get the events first
+        #     stim_channel = self.params.get("stim_channel", "Trigger")
+        #     try:
+        #         # Find events in the data
+        #         detected_events = mne.find_events(data, stim_channel=stim_channel, shortest_event=1, verbose=False)
+                
+        #         # Get visualization parameters
+        #         plot_params = self.params.get("plot_params", {})
+        #         duration = plot_params.get("duration", 10.0)  # Default: 10s window
+        #         tstart = plot_params.get("tstart", 0.0)       # Default: start at 0s
+        #         interactive = plot_params.get("interactive", False)  # Default: non-interactive
+        #         save_fig = {
+        #             'save': plot_params.get("save_plots", False),
+        #             'dir': plot_params.get("save_dir", "figures/events")
+        #         }
+                
+        #         # Use the simple plot function with new parameters
+        #         fig = self.plot_events_simple(
+        #             data, 
+        #             detected_events,
+        #             stim_channel,
+        #             duration=duration,
+        #             tstart=tstart,
+        #             save_fig=save_fig,
+        #             interactive=interactive
+        #         )
+                
+        #         if fig:
+        #             logging.info(f"[EpochingStep] Simple event visualization created: {duration}s window from {tstart}s")
+        #     except Exception as e:
+        #         logging.warning(f"[EpochingStep] Could not visualize events: {e}")
         
         return result
 
@@ -441,9 +449,15 @@ class EpochingStep(BaseStep):
         Epoch data for Go/No-Go task.
         
         Typically has:
-        - Go stimuli triggers
-        - NoGo stimuli triggers
-        - Response triggers (for Go trials)
+        - Go stimuli triggers (code 1)
+        - NoGo stimuli triggers (code 2)
+        - Response triggers (code 3), which indicates a correct response for BOTH go and nogo trials
+        
+        Classifies trials into:
+        - correct_go: Go stimulus (1) followed by response (3) before the next stimulus
+        - correct_nogo: NoGo stimulus (2) followed by response (3) before the next stimulus
+        
+        By default, only correct trials are kept.
         """
         # Log the epoching strategy
         logging.info(f"[EpochingStep] Epoching Go/No-Go data")
@@ -453,33 +467,38 @@ class EpochingStep(BaseStep):
         nogo_id = trigger_ids.get("nogo", None)
         response_id = trigger_ids.get("response", None)
         
+        # Check if we have the required trigger codes
+        if go_id is None or nogo_id is None or response_id is None:
+            logging.error("[EpochingStep] Missing required trigger codes for Go/No-Go task")
+            logging.error(f"   go_id: {go_id}, nogo_id: {nogo_id}, response_id: {response_id}")
+            logging.error("   Please provide 'go', 'nogo', and 'response' in trigger_ids")
+            return data
+        
         # Get stim channel parameter
         stim_channel = self.params.get("stim_channel", "Trigger")
         
         # Find events in the data
-        events = mne.find_events(data, stim_channel=stim_channel, shortest_event=5,min_duration=0.01)
+        events = mne.find_events(data, stim_channel=stim_channel, shortest_event=5, min_duration=0.01)
 
         if len(events) == 0:
             logging.error(f"[EpochingStep] No events found with stim_channel={stim_channel}. Available channels: {data.ch_names}")
             # Try with STI as a fallback
             if 'STI' in data.ch_names and stim_channel != 'STI':
                 logging.info("[EpochingStep] Trying with STI channel as fallback")
-                events = mne.find_events(data, stim_channel='STI', shortest_event=5, min_duration=0.001,verbose=True)
+                events = mne.find_events(data, stim_channel='STI', shortest_event=5, min_duration=0.01, verbose=True)
         
+        # Print event IDs for debugging
+        unique_ids = np.unique(events[:, 2])
         logging.info(f"[EpochingStep] Found {len(events)} total events")
+        logging.info(f"Event IDs found: {unique_ids}")
         
-        # Create event dictionary
-        event_id = {}
-        if go_id is not None:
-            event_id['go'] = go_id
-        if nogo_id is not None:
-            event_id['nogo'] = nogo_id
-        if response_id is not None:
-            event_id['response'] = response_id
-            
-        if not event_id:
-            logging.warning("[EpochingStep] No Go/NoGo triggers defined for epoching")
-            return data
+        # Check if our required trigger IDs are in the data
+        if go_id not in unique_ids:
+            logging.error(f"[EpochingStep] Go trigger ID {go_id} not found in the data!")
+        if nogo_id not in unique_ids:
+            logging.error(f"[EpochingStep] NoGo trigger ID {nogo_id} not found in the data!")
+        if response_id not in unique_ids:
+            logging.error(f"[EpochingStep] Response trigger ID {response_id} not found in the data!")
         
         # Visualize the detected events if requested
         if self.params.get("visualize_events", False):
@@ -491,64 +510,124 @@ class EpochingStep(BaseStep):
                     save_dir = self.params.get("plot_params", {}).get("save_dir", "figures/events")
                     self._save_figures(fig, save_dir)
         
-        # Create epochs
-        epochs = mne.Epochs(data, events, event_id=event_id, tmin=tmin, tmax=tmax,
-                           baseline=baseline, preload=preload, 
-                           reject_by_annotation=reject_by_annotation)
+        # Extract all stimulus events (both go and nogo) and sort them by time
+        all_stim_events = events[(events[:, 2] == go_id) | (events[:, 2] == nogo_id)]
+        all_stim_events = all_stim_events[np.argsort(all_stim_events[:, 0])]
         
-        logging.info(f"[EpochingStep] Created {len(epochs)} epochs for Go/No-Go task")
+        # Extract go, nogo and response events
+        go_events = events[events[:, 2] == go_id]
+        nogo_events = events[events[:, 2] == nogo_id]
+        response_events = events[events[:, 2] == response_id]
         
-        # Calculate performance metrics if possible
-        if 'go' in event_id and 'nogo' in event_id and response_id is not None:
+        logging.info(f"[EpochingStep] Event counts: {len(go_events)} go, {len(nogo_events)} nogo, {len(response_events)} response")
+        
+        # Create new event array with correct trials only
+        correct_events = []
+        event_id = {}
+        
+        # Define codes for correct trial types
+        CORRECT_GO_ID = 11    # Go followed by response
+        CORRECT_NOGO_ID = 21  # NoGo followed by response (for this specific task)
+        
+        # Process each stimulus event to see if there's a response before the next stimulus
+        correct_go_count = 0
+        correct_nogo_count = 0
+        
+        for i in range(len(all_stim_events)):
+            current_stim = all_stim_events[i]
+            current_time = current_stim[0]
+            current_type = current_stim[2]
+            
+            # Determine the end time (the time of the next stimulus or the end of recording)
+            if i < len(all_stim_events) - 1:
+                next_time = all_stim_events[i + 1][0]
+            else:
+                # If this is the last stimulus, use a reasonable window (5 seconds)
+                next_time = current_time + int(5.0 * data.info['sfreq'])
+            
+            # Find any responses between current stimulus and next stimulus
+            responses_between = response_events[
+                (response_events[:, 0] > current_time) & 
+                (response_events[:, 0] < next_time)
+            ]
+            
+            # Check if there's at least one response
+            if len(responses_between) > 0:
+                # This is a correct trial - create new event at the stimulus onset
+                new_evt = current_stim.copy()
+                
+                if current_type == go_id:
+                    # Correct go trial
+                    new_evt[2] = CORRECT_GO_ID
+                    correct_go_count += 1
+                elif current_type == nogo_id:
+                    # Correct nogo trial
+                    new_evt[2] = CORRECT_NOGO_ID
+                    correct_nogo_count += 1
+                
+                correct_events.append(new_evt)
+                
+                # Calculate response time for logging/debugging
+                response_time = (responses_between[0][0] - current_time) / data.info['sfreq']
+                logging.debug(f"Response time for event at {current_time}: {response_time:.3f}s")
+        
+        # Add event IDs to the dictionary if we have any
+        if correct_go_count > 0:
+            event_id['correct_go'] = CORRECT_GO_ID
+        if correct_nogo_count > 0:
+            event_id['correct_nogo'] = CORRECT_NOGO_ID
+        
+        # Log the correct trial counts
+        logging.info(f"[EpochingStep] Correct trials: {correct_go_count} go, {correct_nogo_count} nogo")
+        
+        # Calculate hit rate and correct nogo rate
+        total_go = len(go_events)
+        total_nogo = len(nogo_events)
+        
+        hit_rate = correct_go_count / total_go if total_go > 0 else 0
+        correct_response_rate = correct_nogo_count / total_nogo if total_nogo > 0 else 0
+        
+        logging.info(f"[EpochingStep] Hit rate: {hit_rate:.2f}, Correct NoGo response rate: {correct_response_rate:.2f}")
+        
+        # Check if we have any events to epoch
+        if len(correct_events) == 0:
+            logging.error("[EpochingStep] No correct trials found for epoching!")
+            return data
+        
+        # Convert to numpy array and sort by time
+        correct_events = np.array(correct_events)
+        correct_events = correct_events[np.argsort(correct_events[:, 0])]
+        
+        # Create epochs around the stimulus onsets
+        try:
+            epochs = mne.Epochs(data, correct_events, event_id=event_id, tmin=tmin, tmax=tmax,
+                               baseline=baseline, preload=preload, 
+                               reject_by_annotation=reject_by_annotation)
+            
+            logging.info(f"[EpochingStep] Created {len(epochs)} epochs for Go/No-Go task with {len(event_id)} conditions")
+            logging.info(f"[EpochingStep] Available conditions: {list(event_id.keys())}")
+            
+            # Store performance metrics in metadata
             try:
-                go_events = events[events[:, 2] == go_id]
-                nogo_events = events[events[:, 2] == nogo_id]
-                response_events = events[events[:, 2] == response_id]
+                if not hasattr(epochs, 'metadata') or epochs.metadata is None:
+                    epochs.metadata = pd.DataFrame(index=range(len(epochs)))
                 
-                # Calculate hit rate (responses to Go stimuli)
-                go_count = len(go_events)
-                hit_count = 0
+                epochs.metadata['hit_rate'] = hit_rate
+                epochs.metadata['correct_nogo_rate'] = correct_response_rate
+                epochs.metadata['n_correct_go'] = correct_go_count
+                epochs.metadata['n_correct_nogo'] = correct_nogo_count
+                epochs.metadata['total_go'] = total_go
+                epochs.metadata['total_nogo'] = total_nogo
                 
-                for go_evt in go_events[:, 0]:
-                    # Look for responses within 1 second after Go stimulus
-                    response_window = 1.0  # seconds
-                    response_samples = int(response_window * data.info['sfreq'])
-                    responses_after_go = response_events[
-                        (response_events[:, 0] > go_evt) & 
-                        (response_events[:, 0] < go_evt + response_samples)
-                    ]
-                    if len(responses_after_go) > 0:
-                        hit_count += 1
-                
-                # Calculate false alarm rate (responses to NoGo stimuli)
-                nogo_count = len(nogo_events)
-                fa_count = 0
-                
-                for nogo_evt in nogo_events[:, 0]:
-                    # Look for responses within 1 second after NoGo stimulus
-                    response_window = 1.0  # seconds
-                    response_samples = int(response_window * data.info['sfreq'])
-                    responses_after_nogo = response_events[
-                        (response_events[:, 0] > nogo_evt) & 
-                        (response_events[:, 0] < nogo_evt + response_samples)
-                    ]
-                    if len(responses_after_nogo) > 0:
-                        fa_count += 1
-                
-                # Calculate metrics
-                hit_rate = hit_count / go_count if go_count > 0 else 0
-                fa_rate = fa_count / nogo_count if nogo_count > 0 else 0
-                
-                logging.info(f"[EpochingStep] Go/NoGo Performance - Hit rate: {hit_rate:.2f}, False alarm rate: {fa_rate:.2f}")
-                
-                # Store in metadata if epochs object supports it
-                if hasattr(epochs, 'metadata') and epochs.metadata is not None:
-                    epochs.metadata['hit_rate'] = hit_rate
-                    epochs.metadata['false_alarm_rate'] = fa_rate
             except Exception as e:
-                logging.warning(f"[EpochingStep] Could not calculate performance metrics: {e}")
-        
-        return epochs if returns_epochs else data
+                logging.warning(f"[EpochingStep] Could not store metadata: {e}")
+                
+            return epochs if returns_epochs else data
+            
+        except Exception as e:
+            logging.error(f"[EpochingStep] Error creating epochs: {str(e)}")
+            # If there was an error, return the original data
+            return data
 
     def _extract_continuous_segment(self, data, trigger_ids, preload):
         """
@@ -922,9 +1001,15 @@ class EpochingStep(BaseStep):
             # Image plot (epochs x time)
             for event_name in event_names:
                 try:
+                    # Make sure combine is actually a boolean, not a string
+                    combine_value = combine
+                    if isinstance(combine, str):
+                        combine_value = combine.lower() == 'true'
+                    
+                    # Plot image with proper boolean value
                     fig = epochs_plot[event_name].plot_image(
                         picks=channels,
-                        combine=combine,
+                        combine=combine_value,
                         title=f'Epochs image for {event_name}' if title is None else title
                     )
                     figures.append(fig)
@@ -1024,24 +1109,6 @@ class EpochingStep(BaseStep):
                 
                 # Plot the difference - don't pass title parameter
                 fig = diff_wave.plot(picks=channels, spatial_colors=True)
-                
-                # Alternative approach: create a custom figure
-                # fig, ax = plt.subplots(figsize=(10, 6))
-                # times = diff_wave.times * 1000  # Convert to ms
-                # if channels == 'eeg' or isinstance(channels, list) and len(channels) > 1:
-                #     # Average across selected channels if multiple channels
-                #     data = diff_wave.data.mean(axis=0)
-                #     ax.plot(times, data, linewidth=2)
-                # else:
-                #     # Plot the selected channel
-                #     ch_idx = diff_wave.ch_names.index(channels[0]) if isinstance(channels, list) else 0
-                #     data = diff_wave.data[ch_idx]
-                #     ax.plot(times, data, linewidth=2)
-                # ax.axvline(x=0, color='k', linestyle='--', alpha=0.5)
-                # ax.axhline(y=0, color='k', linestyle='-', alpha=0.2)
-                # ax.set_xlabel('Time (ms)')
-                # ax.set_ylabel('Amplitude (μV)')
-                # ax.set_title('Difference: {event_names[0]} - {event_names[1]}' if title is None else title)
                 
                 plt.tight_layout()
                 figures.append(fig)
@@ -1379,7 +1446,7 @@ epoching_params = {
     # Enable auto-plotting
     "auto_plot": True,
     "plot_params": {
-        "plot_type": "average",  # Options: average, butterfly, image, psd, topo, compare, difference, gfp
+        "plot_type": "average",  # Options: average, butterfly, image, psd, topo, compare
         "event_names": ["go", "nogo"],  # Which events to plot (if None, plots all)
         "channels": ["Fz", "Cz", "Pz"],  # Which channels to plot (if None, plots all EEG)
         "time_window": [-0.1, 0.5],  # Optional time window to focus on
