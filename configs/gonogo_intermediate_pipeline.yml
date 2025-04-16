@@ -16,7 +16,7 @@ debug_mode:
   # Fast AutoReject settings for debug mode
   autoreject:
     n_interpolate: [1]
-    consensus: [0.1, 0.3, 0.5, 0.75]
+    consensus: None
     thresh_method: "cross_validation"
     n_jobs: 4
     cv: 3
@@ -32,7 +32,7 @@ debug_mode:
   # Fast ICA labeling settings for debug mode
   ica_labeling:
     methods: [correlation]
-    skip_plots: true
+    skip_plots: False
     auto_exclude: true
 
 pipeline:
@@ -44,8 +44,8 @@ pipeline:
   - name: AutoRejectStep
     params:
       ar_params:
-        n_interpolate: [1, 4, 8]
-        consensus: [0.1, 0.3, 0.5, 0.75, 0.95]
+        n_interpolate: [1, 4]
+        consensus: None
         thresh_method: bayesian_optimization
         n_jobs: 1
       plot_results: true
