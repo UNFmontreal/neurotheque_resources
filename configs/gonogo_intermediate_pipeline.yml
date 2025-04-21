@@ -7,7 +7,7 @@ directory:
   processed_dir: data/processed
   raw_data_dir: data/pilot_data/tasks
   reports_dir: reports/intermediate
-  root: D:/Yann/neurotheque_resources/
+  root: e:/Yann/neurotheque_resources/
 file_path_pattern: sub-01_ses-001_task-gng_run-01_epoched.fif
 
 # Debug mode settings

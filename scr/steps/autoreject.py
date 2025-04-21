@@ -315,7 +315,10 @@ class AutoRejectStep(BaseStep):
             ses_id = getattr(self.params, "session_id", "unknown")
             run_id = getattr(self.params, "run_id", "01")
             plt.savefig(os.path.join(plot_dir, f"autoreject_{sub_id}_{ses_id}_run-{run_id}_epochs.png"), dpi=150)
-            plt.close()
+            
+            # Only close the plot if not in interactive mode
+            if not interactive:
+                plt.close()
             
             # If ar object is provided, plot additional information
             if ar is not None and hasattr(ar, 'threshes_'):
@@ -364,7 +367,10 @@ class AutoRejectStep(BaseStep):
                     
                     # Save the plot
                     plt.savefig(os.path.join(plot_dir, f"autoreject_{sub_id}_{ses_id}_run-{run_id}_thresholds.png"), dpi=150)
-                    plt.close()
+                    
+                    # Only close the plot if not in interactive mode
+                    if not interactive:
+                        plt.close()
                     
                 except Exception as e:
                     logging.warning(f"[AutoRejectStep] Error creating thresholds visualization: {e}")
@@ -549,7 +555,10 @@ class AutoRejectStep(BaseStep):
             os.makedirs(plot_dir, exist_ok=True)
             
             plt.savefig(os.path.join(plot_dir, f"autoreject_{sub_id}_{ses_id}_run-{run_id}_channel_rejection_rates.png"), dpi=150)
-            plt.close()
+            
+            # Only close the plot if not in interactive mode
+            if not interactive:
+                plt.close()
             
             logging.info(f"[AutoRejectStep] Saved channel rejection rates visualization to {plot_dir}")
             
