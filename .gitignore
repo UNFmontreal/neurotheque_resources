@@ -59,4 +59,11 @@ task_config.py.2
 task_config.py.3
 task_config.py.4
 task_config.py.5
-
+*.png
+*.pdf
+*.svg
+*.eps
+*.ps
+*.log
+*.log.1
+*.log.2
