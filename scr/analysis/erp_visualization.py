@@ -18,9 +18,10 @@ from typing import Dict, List, Union, Optional, Tuple
 import logging
 
 # Configure logging
-logging.basicConfig(level=logging.INFO, 
-                    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-logger = logging.getLogger('erp_visualization')
+logging.basicConfig(
+    level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+)
+logger = logging.getLogger("erp_visualization")
 
 
 class ERPVisualizer:
@@ -47,13 +48,13 @@ class ERPVisualizer:
     """
 
     def __init__(
-        self, 
+        self,
         epochs: mne.Epochs,
         output_dir: Optional[str] = None,
         subject_id: Optional[str] = None,
         session_id: Optional[str] = None,
         run_id: Optional[str] = None,
-        task_id: Optional[str] = None
+        task_id: Optional[str] = None,
     ):
         """
         Initialize the ERP visualizer with epochs and metadata.
@@ -75,10 +76,10 @@ class ERPVisualizer:
         """
         self.epochs = epochs
         self.output_dir = output_dir
-        self.subject_id = subject_id or '01'
-        self.session_id = session_id or '001'
-        self.run_id = run_id or '01'
-        self.task_id = task_id or 'task'
+        self.subject_id = subject_id or "01"
+        self.session_id = session_id or "001"
+        self.run_id = run_id or "01"
+        self.task_id = task_id or "task"
 
         # Create output directory if provided
         if output_dir:
@@ -87,10 +88,11 @@ class ERPVisualizer:
         logger.info(f"Initialized ERPVisualizer with {len(epochs)} epochs")
         logger.info(f"Available event types: {epochs.event_id}")
 
-    def get_evokeds(self, 
-                    conditions: Union[str, List[str]] = None, 
-                    baseline: Optional[Tuple[float, float]] = None
-                   ) -> Dict[str, mne.Evoked]:
+    def get_evokeds(
+        self,
+        conditions: Union[str, List[str]] = None,
+        baseline: Optional[Tuple[float, float]] = None,
+    ) -> Dict[str, mne.Evoked]:
         """
         Get evoked responses for specified conditions.
 
@@ -130,21 +132,22 @@ class ERPVisualizer:
 
         return evokeds
 
-    def plot_erps_comparison(self,
-                             conditions: List[str],
-                             channels: Optional[Union[str, List[str]]] = None,
-                             colors: Optional[List[str]] = None,
-                             title: str = "ERP Comparison",
-                             show: bool = True,
-                             save: bool = True,
-                             filename: Optional[str] = None,
-                             figsize: Tuple[int, int] = (10, 6),
-                             baseline: Optional[Tuple[float, float]] = None,
-                             ylim: Optional[Tuple[float, float]] = None,
-                             spatial_colors: bool = True,
-                             gfp: bool = True,
-                             custom_style: bool = True
-                            ) -> Optional[plt.Figure]:
+    def plot_erps_comparison(
+        self,
+        conditions: List[str],
+        channels: Optional[Union[str, List[str]]] = None,
+        colors: Optional[List[str]] = None,
+        title: str = "ERP Comparison",
+        show: bool = True,
+        save: bool = True,
+        filename: Optional[str] = None,
+        figsize: Tuple[int, int] = (10, 6),
+        baseline: Optional[Tuple[float, float]] = None,
+        ylim: Optional[Tuple[float, float]] = None,
+        spatial_colors: bool = True,
+        gfp: bool = True,
+        custom_style: bool = True,
+    ) -> Optional[plt.Figure]:
         """
         Plot ERPs for multiple conditions by comparing evoked responses.
 
@@ -189,26 +192,31 @@ class ERPVisualizer:
         # Extract evoked objects
         evokeds = self.get_evokeds(conditions, baseline)
         if not evokeds:
-            logger.error(f"No evoked responses could be extracted for conditions: {conditions}")
+            logger.error(
+                f"No evoked responses could be extracted for conditions: {conditions}"
+            )
             return None
 
         # Set default colors if none provided
         if colors is None:
-            colors = ['b', 'r', 'g', 'c', 'm', 'y', 'k']
-            colors = colors[:len(conditions)]
+            colors = ["b", "r", "g", "c", "m", "y", "k"]
+            colors = colors[: len(conditions)]
 
         # If not using custom styling, leverage MNE's built-in function.
         if not custom_style:
             # Use channel selection if specified
             picks = channels if channels is not None else None
-            fig = mne.viz.plot_compare_evokeds(evokeds, picks=picks, colors=colors,
-                                               show=show, title=title)
+            fig = mne.viz.plot_compare_evokeds(
+                evokeds, picks=picks, colors=colors, show=show, title=title
+            )
             if ylim:
                 plt.ylim(ylim)
             if save and self.output_dir:
                 if filename is None:
-                    conditions_str = '_'.join(conditions)
-                    filename = f"{self.subject_id}_{self.session_id}_{conditions_str}_erp.png"
+                    conditions_str = "_".join(conditions)
+                    filename = (
+                        f"{self.subject_id}_{self.session_id}_{conditions_str}_erp.png"
+                    )
                 filepath = os.path.join(self.output_dir, filename)
                 try:
                     fig.savefig(filepath, dpi=300)
@@ -242,13 +250,25 @@ class ERPVisualizer:
             for idx, ch in enumerate(evoked.ch_names):
                 # Label only the first channel per condition
                 label = condition if idx == 0 else None
-                ax.plot(times, evoked.data[idx, :],
-                        color=color, linewidth=1.5, label=label, alpha=0.8)
+                ax.plot(
+                    times,
+                    evoked.data[idx, :],
+                    color=color,
+                    linewidth=1.5,
+                    label=label,
+                    alpha=0.8,
+                )
             if gfp:
                 # Optionally plot Global Field Power (GFP) in a thicker line
                 gfp_val = evoked.data.std(axis=0)
-                ax.plot(times, gfp_val, color=color, linewidth=3, linestyle='--',
-                        label=f"{condition} GFP")
+                ax.plot(
+                    times,
+                    gfp_val,
+                    color=color,
+                    linewidth=3,
+                    linestyle="--",
+                    label=f"{condition} GFP",
+                )
 
         ax.set_title(title)
         ax.set_xlabel("Time (s)")
@@ -256,7 +276,7 @@ class ERPVisualizer:
         if ylim:
             ax.set_ylim(ylim)
         ax.legend()
-        ax.grid(True, linestyle='--', alpha=0.6)
+        ax.grid(True, linestyle="--", alpha=0.6)
         plt.tight_layout()
 
         if show:
@@ -264,8 +284,10 @@ class ERPVisualizer:
 
         if save and self.output_dir:
             if filename is None:
-                conditions_str = '_'.join(conditions)
-                filename = f"{self.subject_id}_{self.session_id}_{conditions_str}_erp.png"
+                conditions_str = "_".join(conditions)
+                filename = (
+                    f"{self.subject_id}_{self.session_id}_{conditions_str}_erp.png"
+                )
             filepath = os.path.join(self.output_dir, filename)
             try:
                 fig.savefig(filepath, dpi=300)
@@ -274,18 +296,19 @@ class ERPVisualizer:
                 logger.error(f"Error saving figure: {e}")
 
         return fig
-    
-    def plot_topo_maps(self,
-                        conditions: List[str],
-                        times: Optional[List[float]] = None,
-                        title: str = "Topographic Maps",
-                        show: bool = True,
-                        save: bool = True,
-                        filename: Optional[str] = None,
-                        vmin: Optional[float] = None,
-                        vmax: Optional[float] = None,
-                        baseline: Optional[Tuple[float, float]] = None
-                    ) -> List[plt.Figure]:
+
+    def plot_topo_maps(
+        self,
+        conditions: List[str],
+        times: Optional[List[float]] = None,
+        title: str = "Topographic Maps",
+        show: bool = True,
+        save: bool = True,
+        filename: Optional[str] = None,
+        vmin: Optional[float] = None,
+        vmax: Optional[float] = None,
+        baseline: Optional[Tuple[float, float]] = None,
+    ) -> List[plt.Figure]:
         """
         Plot topographic maps for each condition at specified time points.
 
@@ -317,7 +340,9 @@ class ERPVisualizer:
         """
         evokeds = self.get_evokeds(conditions, baseline)
         if not evokeds:
-            logger.error(f"No evoked responses could be extracted for conditions: {conditions}")
+            logger.error(
+                f"No evoked responses could be extracted for conditions: {conditions}"
+            )
             return []
 
         if times is None:
@@ -344,14 +369,14 @@ class ERPVisualizer:
                         new_vmax = vmax if vmax is not None else current_clim[1]
                         im.set_clim(new_vmin, new_vmax)
 
-            if hasattr(fig, 'suptitle'):
+            if hasattr(fig, "suptitle"):
                 fig.suptitle(f"{title} - {condition}")
 
             figures.append(fig)
 
             if save and self.output_dir:
                 if filename is None:
-                    times_str = '_'.join([f"{t:.2f}".replace('.', '') for t in times])
+                    times_str = "_".join([f"{t:.2f}".replace(".", "") for t in times])
                     save_filename = f"{self.subject_id}_{self.session_id}_{condition}_topo_{times_str}.png"
                 else:
                     save_filename = f"{condition}_{filename}"
@@ -364,17 +389,18 @@ class ERPVisualizer:
 
         return figures
 
-    def plot_butterfly(self,
-                       conditions: List[str],
-                       title: str = "Butterfly Plot",
-                       show: bool = True,
-                       save: bool = True,
-                       filename: Optional[str] = None,
-                       figsize: Tuple[int, int] = (10, 6),
-                       baseline: Optional[Tuple[float, float]] = None,
-                       spatial_colors: bool = True,
-                       gfp: bool = True
-                      ) -> Dict[str, plt.Figure]:
+    def plot_butterfly(
+        self,
+        conditions: List[str],
+        title: str = "Butterfly Plot",
+        show: bool = True,
+        save: bool = True,
+        filename: Optional[str] = None,
+        figsize: Tuple[int, int] = (10, 6),
+        baseline: Optional[Tuple[float, float]] = None,
+        spatial_colors: bool = True,
+        gfp: bool = True,
+    ) -> Dict[str, plt.Figure]:
         """
         Create butterfly plots for each condition.
 
@@ -406,15 +432,23 @@ class ERPVisualizer:
         """
         evokeds = self.get_evokeds(conditions, baseline)
         if not evokeds:
-            logger.error(f"No evoked responses could be extracted for conditions: {conditions}")
+            logger.error(
+                f"No evoked responses could be extracted for conditions: {conditions}"
+            )
             return {}
 
         figures = {}
         for condition, evoked in evokeds.items():
             fig, ax = plt.subplots(figsize=figsize)
             # Plot using MNE's built-in plotting method for an evoked object
-            evoked.plot(axes=ax, show=False, spatial_colors=spatial_colors,
-                        time_unit='s', gfp=gfp, selectable=False)
+            evoked.plot(
+                axes=ax,
+                show=False,
+                spatial_colors=spatial_colors,
+                time_unit="s",
+                gfp=gfp,
+                selectable=False,
+            )
             ax.set_title(f"{title} - {condition}")
             plt.tight_layout()
             figures[condition] = fig
@@ -424,7 +458,9 @@ class ERPVisualizer:
 
             if save and self.output_dir:
                 if filename is None:
-                    save_filename = f"{self.subject_id}_{self.session_id}_{condition}_butterfly.png"
+                    save_filename = (
+                        f"{self.subject_id}_{self.session_id}_{condition}_butterfly.png"
+                    )
                 else:
                     save_filename = f"{condition}_{filename}"
                 filepath = os.path.join(self.output_dir, save_filename)
@@ -436,14 +472,15 @@ class ERPVisualizer:
 
         return figures
 
-    def plot_joint(self,
-                   conditions: List[str],
-                   times: Optional[List[float]] = None,
-                   show: bool = True,
-                   save: bool = True,
-                   filename: Optional[str] = None,
-                   baseline: Optional[Tuple[float, float]] = None
-                  ) -> Dict[str, plt.Figure]:
+    def plot_joint(
+        self,
+        conditions: List[str],
+        times: Optional[List[float]] = None,
+        show: bool = True,
+        save: bool = True,
+        filename: Optional[str] = None,
+        baseline: Optional[Tuple[float, float]] = None,
+    ) -> Dict[str, plt.Figure]:
         """
         Create joint plots (combining butterfly and topomaps) for each condition.
 
@@ -469,7 +506,9 @@ class ERPVisualizer:
         """
         evokeds = self.get_evokeds(conditions, baseline)
         if not evokeds:
-            logger.error(f"No evoked responses could be extracted for conditions: {conditions}")
+            logger.error(
+                f"No evoked responses could be extracted for conditions: {conditions}"
+            )
             return {}
 
         if times is None:
@@ -481,7 +520,7 @@ class ERPVisualizer:
             figures[condition] = fig
 
             if save and self.output_dir:
-                times_str = '_'.join([f"{t:.2f}".replace('.', '') for t in times])
+                times_str = "_".join([f"{t:.2f}".replace(".", "") for t in times])
                 if filename is None:
                     save_filename = f"{self.subject_id}_{self.session_id}_{condition}_joint_{times_str}.png"
                 else:
@@ -495,18 +534,19 @@ class ERPVisualizer:
 
         return figures
 
-    def plot_difference_wave(self,
-                             condition1: str,
-                             condition2: str,
-                             channels: Optional[Union[str, List[str]]] = None,
-                             title: str = "Difference Wave",
-                             show: bool = True,
-                             save: bool = True,
-                             filename: Optional[str] = None,
-                             figsize: Tuple[int, int] = (10, 6),
-                             baseline: Optional[Tuple[float, float]] = None,
-                             ylim: Optional[Tuple[float, float]] = None
-                            ) -> Optional[plt.Figure]:
+    def plot_difference_wave(
+        self,
+        condition1: str,
+        condition2: str,
+        channels: Optional[Union[str, List[str]]] = None,
+        title: str = "Difference Wave",
+        show: bool = True,
+        save: bool = True,
+        filename: Optional[str] = None,
+        figsize: Tuple[int, int] = (10, 6),
+        baseline: Optional[Tuple[float, float]] = None,
+        ylim: Optional[Tuple[float, float]] = None,
+    ) -> Optional[plt.Figure]:
         """
         Plot the difference wave between two conditions.
 
@@ -540,7 +580,9 @@ class ERPVisualizer:
         """
         evokeds = self.get_evokeds([condition1, condition2], baseline)
         if condition1 not in evokeds or condition2 not in evokeds:
-            logger.error(f"Could not extract both conditions: {condition1}, {condition2}")
+            logger.error(
+                f"Could not extract both conditions: {condition1}, {condition2}"
+            )
             return None
 
         # Compute the difference wave
@@ -556,13 +598,21 @@ class ERPVisualizer:
                 channels_list = channels
             valid_chs = [ch for ch in channels_list if ch in diff_wave.ch_names]
             if not valid_chs:
-                logger.warning(f"No valid channels found for difference plot between {condition1} and {condition2}")
+                logger.warning(
+                    f"No valid channels found for difference plot between {condition1} and {condition2}"
+                )
             else:
                 diff_wave = diff_wave.copy().pick_channels(valid_chs)
 
         fig, ax = plt.subplots(figsize=figsize)
-        diff_wave.plot(axes=ax, show=False, spatial_colors=True, 
-                       time_unit='s', gfp=True, selectable=False)
+        diff_wave.plot(
+            axes=ax,
+            show=False,
+            spatial_colors=True,
+            time_unit="s",
+            gfp=True,
+            selectable=False,
+        )
         ax.set_title(f"{title}: {condition1} - {condition2}")
         if ylim:
             ax.set_ylim(ylim)
@@ -583,18 +633,19 @@ class ERPVisualizer:
 
         return fig
 
-    def plot_channel_erps(self,
-                          conditions: List[str],
-                          channel: str,
-                          colors: Optional[List[str]] = None,
-                          title: Optional[str] = None,
-                          show: bool = True,
-                          save: bool = True,
-                          filename: Optional[str] = None,
-                          figsize: Tuple[int, int] = (10, 6),
-                          baseline: Optional[Tuple[float, float]] = None,
-                          ylim: Optional[Tuple[float, float]] = None
-                         ) -> Optional[plt.Figure]:
+    def plot_channel_erps(
+        self,
+        conditions: List[str],
+        channel: str,
+        colors: Optional[List[str]] = None,
+        title: Optional[str] = None,
+        show: bool = True,
+        save: bool = True,
+        filename: Optional[str] = None,
+        figsize: Tuple[int, int] = (10, 6),
+        baseline: Optional[Tuple[float, float]] = None,
+        ylim: Optional[Tuple[float, float]] = None,
+    ) -> Optional[plt.Figure]:
         """
         Plot ERPs for a specific channel across multiple conditions.
 
@@ -628,12 +679,14 @@ class ERPVisualizer:
         """
         evokeds = self.get_evokeds(conditions, baseline)
         if not evokeds:
-            logger.error(f"No evoked responses could be extracted for conditions: {conditions}")
+            logger.error(
+                f"No evoked responses could be extracted for conditions: {conditions}"
+            )
             return None
 
         if colors is None:
-            colors = ['b', 'r', 'g', 'c', 'm', 'y', 'k']
-            colors = colors[:len(conditions)]
+            colors = ["b", "r", "g", "c", "m", "y", "k"]
+            colors = colors[: len(conditions)]
 
         if title is None:
             title = f"Channel {channel} ERPs"
@@ -647,15 +700,20 @@ class ERPVisualizer:
                 logger.warning(f"Channel {channel} not found in condition {condition}")
                 continue
             ch_idx = evoked.ch_names.index(channel)
-            ax.plot(evoked.times, evoked.data[ch_idx, :],
-                    color=color, linewidth=1.5, label=condition)
+            ax.plot(
+                evoked.times,
+                evoked.data[ch_idx, :],
+                color=color,
+                linewidth=1.5,
+                label=condition,
+            )
         ax.set_title(title)
         ax.set_xlabel("Time (s)")
         ax.set_ylabel("Amplitude (μV)")
         ax.legend()
-        ax.grid(True, linestyle='--', alpha=0.6)
-        ax.axhline(0, color='k', linestyle='-', alpha=0.2)
-        ax.axvline(0, color='k', linestyle='-', alpha=0.2)
+        ax.grid(True, linestyle="--", alpha=0.6)
+        ax.axhline(0, color="k", linestyle="-", alpha=0.2)
+        ax.axvline(0, color="k", linestyle="-", alpha=0.2)
         if ylim:
             ax.set_ylim(ylim)
         plt.tight_layout()
@@ -664,7 +722,7 @@ class ERPVisualizer:
             plt.show()
 
         if save and self.output_dir:
-            conditions_str = '_'.join(conditions)
+            conditions_str = "_".join(conditions)
             if filename is None:
                 filename = f"{self.subject_id}_{self.session_id}_{channel}_{conditions_str}_erp.png"
             filepath = os.path.join(self.output_dir, filename)
@@ -676,15 +734,16 @@ class ERPVisualizer:
 
         return fig
 
-    def plot_component_analysis(self,
-                                conditions: List[str],
-                                time_windows: Dict[str, Tuple[float, float]],
-                                channel_groups: Optional[Dict[str, List[str]]] = None,
-                                show: bool = True,
-                                save: bool = True,
-                                figsize: Tuple[int, int] = (12, 8),
-                                baseline: Optional[Tuple[float, float]] = None
-                               ) -> Optional[plt.Figure]:
+    def plot_component_analysis(
+        self,
+        conditions: List[str],
+        time_windows: Dict[str, Tuple[float, float]],
+        channel_groups: Optional[Dict[str, List[str]]] = None,
+        show: bool = True,
+        save: bool = True,
+        figsize: Tuple[int, int] = (12, 8),
+        baseline: Optional[Tuple[float, float]] = None,
+    ) -> Optional[plt.Figure]:
         """
         Plot ERP component analysis for specified time windows and channel groups.
 
@@ -712,7 +771,9 @@ class ERPVisualizer:
         """
         evokeds = self.get_evokeds(conditions, baseline)
         if not evokeds:
-            logger.error(f"No evoked responses could be extracted for conditions: {conditions}")
+            logger.error(
+                f"No evoked responses could be extracted for conditions: {conditions}"
+            )
             return None
 
         # If no channel groups provided, use all channels
@@ -745,7 +806,9 @@ class ERPVisualizer:
                     evoked = evokeds[condition]
                     valid_channels = [ch for ch in channels if ch in evoked.ch_names]
                     if not valid_channels:
-                        logger.warning(f"No valid channels found in group {group_name} for condition {condition}")
+                        logger.warning(
+                            f"No valid channels found in group {group_name} for condition {condition}"
+                        )
                         continue
                     evoked_picked = evoked.copy().pick_channels(valid_channels)
                     time_mask = (evoked.times >= tmin) & (evoked.times <= tmax)
@@ -756,14 +819,16 @@ class ERPVisualizer:
                 # Plot the bars for each condition side by side
                 x = np.arange(1)
                 for k, (mean_amp, cond_label) in enumerate(zip(means, labels)):
-                    ax.bar(x + k * bar_width - 0.4, mean_amp, bar_width, label=cond_label)
+                    ax.bar(
+                        x + k * bar_width - 0.4, mean_amp, bar_width, label=cond_label
+                    )
                 ax.set_title(f"{component_name} ({tmin:.2f}-{tmax:.2f}s)")
                 if i == n_groups - 1:
                     ax.set_xlabel("Component")
                 if j == 0:
                     ax.set_ylabel(f"{group_name}\nAmplitude (μV)")
                 ax.set_xticks([])
-                ax.grid(True, linestyle='--', alpha=0.3, axis='y')
+                ax.grid(True, linestyle="--", alpha=0.3, axis="y")
                 if i == 0 and j == 0:
                     ax.legend()
 
@@ -773,8 +838,11 @@ class ERPVisualizer:
             plt.show()
 
         if save and self.output_dir:
-            components_str = '_'.join(time_windows.keys())
-            filepath = os.path.join(self.output_dir, f"{self.subject_id}_{self.session_id}_{components_str}_analysis.png")
+            components_str = "_".join(time_windows.keys())
+            filepath = os.path.join(
+                self.output_dir,
+                f"{self.subject_id}_{self.session_id}_{components_str}_analysis.png",
+            )
             try:
                 fig.savefig(filepath, dpi=300)
                 logger.info(f"Saved component analysis plot to {filepath}")
@@ -817,4 +885,3 @@ if __name__ == "__main__":
         title="NoGo - Go Difference"
     )
     """
-

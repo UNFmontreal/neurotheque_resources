@@ -2,10 +2,12 @@
 
 from abc import ABC, abstractmethod
 
+
 class BaseStep(ABC):
     """
     Abstract base class for a pipeline step. Each step must implement run().
     """
+
     def __init__(self, params=None):
         """
         Initialize the step with parameters.

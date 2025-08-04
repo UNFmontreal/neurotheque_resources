@@ -2,6 +2,7 @@
 
 from scr.pipeline import Pipeline
 
+
 def run_finger_tapping_pipeline(input_path, output_path, run_id=None):
     """
     Example pipeline for finger tapping experiment.
@@ -21,26 +22,14 @@ def run_finger_tapping_pipeline(input_path, output_path, run_id=None):
         "default_run": run_id if run_id else "01",
         "pipeline": {
             "steps": [
-                {
-                    "name": "LoadData",
-                    "params": {"file_path": input_path}
-                },
-                {
-                    "name": "Filter",
-                    "params": {"l_freq": 1, "h_freq": 40}
-                },
-                {
-                    "name": "TriggerParsing",
-                    "params": {"task": "finger_tapping"}
-                },
+                {"name": "LoadData", "params": {"file_path": input_path}},
+                {"name": "Filter", "params": {"l_freq": 1, "h_freq": 40}},
+                {"name": "TriggerParsing", "params": {"task": "finger_tapping"}},
                 # Possibly do TFR in a specialized step if you like,
                 # or epoching for key presses
-                {
-                    "name": "SaveData",
-                    "params": {"output_path": output_path}
-                }
+                {"name": "SaveData", "params": {"output_path": output_path}},
             ]
-        }
+        },
     }
     pipeline = Pipeline(config_dict=config_dict)
     pipeline.run()

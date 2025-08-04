@@ -4,6 +4,7 @@ import mne
 import numpy as np
 from .base import BaseStep
 
+
 class GoNoGoTriggerStep(BaseStep):
     """
     Finds events (onset=1,2 / response=3,4),
@@ -20,27 +21,27 @@ class GoNoGoTriggerStep(BaseStep):
 
         new_events = []
         new_event_id = {
-            'Go_Correct': 101,
-            'Go_Incorrect': 102,
-            'NoGo_Correct': 201,
-            'NoGo_Incorrect': 202
+            "Go_Correct": 101,
+            "Go_Incorrect": 102,
+            "NoGo_Correct": 201,
+            "NoGo_Incorrect": 202,
         }
 
         i = 0
         while i < len(events) - 1:
             onset_evt = events[i]
-            resp_evt  = events[i+1]
+            resp_evt = events[i + 1]
             onset = onset_evt[2]
-            resp  = resp_evt[2]
+            resp = resp_evt[2]
             if onset in [1, 2] and resp in [3, 4]:
                 if onset == 1 and resp == 3:
-                    new_events.append([onset_evt[0], 0, new_event_id['Go_Correct']])
+                    new_events.append([onset_evt[0], 0, new_event_id["Go_Correct"]])
                 elif onset == 1 and resp == 4:
-                    new_events.append([onset_evt[0], 0, new_event_id['Go_Incorrect']])
+                    new_events.append([onset_evt[0], 0, new_event_id["Go_Incorrect"]])
                 elif onset == 2 and resp == 3:
-                    new_events.append([onset_evt[0], 0, new_event_id['NoGo_Correct']])
+                    new_events.append([onset_evt[0], 0, new_event_id["NoGo_Correct"]])
                 elif onset == 2 and resp == 4:
-                    new_events.append([onset_evt[0], 0, new_event_id['NoGo_Incorrect']])
+                    new_events.append([onset_evt[0], 0, new_event_id["NoGo_Incorrect"]])
                 i += 2
             else:
                 i += 1

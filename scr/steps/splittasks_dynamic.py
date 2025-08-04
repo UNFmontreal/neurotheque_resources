@@ -6,6 +6,7 @@ import mne
 from pathlib import Path
 from .base import BaseStep
 
+
 class SplitTasksStep(BaseStep):
     """
     A flexible step to split Raw data into multiple tasks based on triggers,
@@ -34,11 +35,10 @@ class SplitTasksStep(BaseStep):
         if data is None:
             raise ValueError("[SplitTasksStep] No data to split.")
 
-
         # 1) Ensure we have an output folder (subject-specific if pipeline rewrote it)
         sub_id = self.params["subject_id"]
         ses_id = self.params["session_id"]
-        paths=self.params['paths']
+        paths = self.params["paths"]
         out_dir = paths.get_split_task_path(sub_id, ses_id)
         if not out_dir:
             raise ValueError("[SplitTasksStep] 'output_folder' param is required.")
@@ -50,7 +50,9 @@ class SplitTasksStep(BaseStep):
             return data
 
         # 3) Find triggers
-        events = mne.find_events(data, stim_channel='Trigger', min_duration=0.001, consecutive=False)
+        events = mne.find_events(
+            data, stim_channel="Trigger", min_duration=0.001, consecutive=False
+        )
         logging.info(f"[SplitTasksStep] Found {len(events)} events in the data.")
 
         # Build a dictionary of {trigger_value -> list of sample indices}
@@ -58,7 +60,7 @@ class SplitTasksStep(BaseStep):
         for samp, _, trig_val in events:
             trigger_dict.setdefault(trig_val, []).append(samp)
 
-        sfreq = data.info['sfreq']
+        sfreq = data.info["sfreq"]
 
         # We'll store start/end sample for each completed task
         task_segments = {}
@@ -71,11 +73,15 @@ class SplitTasksStep(BaseStep):
             )
 
             if start_sample is None or end_sample is None:
-                logging.warning(f"[SplitTasksStep] {task_name}: Could not define segment. Skipping.")
+                logging.warning(
+                    f"[SplitTasksStep] {task_name}: Could not define segment. Skipping."
+                )
                 continue
 
             if start_sample >= end_sample:
-                logging.warning(f"[SplitTasksStep] {task_name}: start >= end => Skipping.")
+                logging.warning(
+                    f"[SplitTasksStep] {task_name}: start >= end => Skipping."
+                )
                 continue
 
             # Crop the raw data for this task
@@ -115,17 +121,24 @@ class SplitTasksStep(BaseStep):
         # start_trigger logic
         if "start_trigger" in task_def:
             st_trig = task_def["start_trigger"]
-            if st_trig in trigger_dict and len(trigger_dict[st_trig]) > occurrence_index:
+            if (
+                st_trig in trigger_dict
+                and len(trigger_dict[st_trig]) > occurrence_index
+            ):
                 start_sample = trigger_dict[st_trig][occurrence_index]
             else:
-                logging.error(f"{task_name}: Missing or insufficient occurrences of start_trigger={st_trig}.")
+                logging.error(
+                    f"{task_name}: Missing or insufficient occurrences of start_trigger={st_trig}."
+                )
                 return (None, None)
 
         # start_after_task logic
         if "start_after_task" in task_def:
             ref_task = task_def["start_after_task"]
             if ref_task not in task_segments:
-                logging.error(f"{task_name}: The referenced task '{ref_task}' isn't defined yet.")
+                logging.error(
+                    f"{task_name}: The referenced task '{ref_task}' isn't defined yet."
+                )
                 return (None, None)
             ref_end = task_segments[ref_task]["end"]
             offset_mins = task_def.get("start_offset_minutes", 0)
@@ -139,10 +152,15 @@ class SplitTasksStep(BaseStep):
         # end_trigger logic
         if "end_trigger" in task_def:
             end_trig = task_def["end_trigger"]
-            if end_trig in trigger_dict and len(trigger_dict[end_trig]) > occurrence_index:
+            if (
+                end_trig in trigger_dict
+                and len(trigger_dict[end_trig]) > occurrence_index
+            ):
                 end_sample = trigger_dict[end_trig][occurrence_index]
             else:
-                logging.error(f"{task_name}: Missing or insufficient occurrences of end_trigger={end_trig}.")
+                logging.error(
+                    f"{task_name}: Missing or insufficient occurrences of end_trigger={end_trig}."
+                )
                 return (None, None)
 
         # end_before_trigger logic
@@ -150,7 +168,7 @@ class SplitTasksStep(BaseStep):
             ebt = task_def["end_before_trigger"]
             ebt_occ_idx = task_def.get("end_before_occurrence_index", 1) - 1
             offset_mins = task_def.get("end_offset_minutes", 0)
-            offset_samps = int(offset_mins * 60 * sfreq) 
+            offset_samps = int(offset_mins * 60 * sfreq)
 
             if ebt in trigger_dict and len(trigger_dict[ebt]) > ebt_occ_idx:
                 ebt_samp = trigger_dict[ebt][ebt_occ_idx] - offset_samps
@@ -159,7 +177,9 @@ class SplitTasksStep(BaseStep):
                 else:
                     end_sample = min(end_sample, ebt_samp)
             else:
-                logging.error(f"{task_name}: Missing end_before_trigger {ebt} or not enough occurrences.")
+                logging.error(
+                    f"{task_name}: Missing end_before_trigger {ebt} or not enough occurrences."
+                )
                 return (None, None)
 
         # Return the final start/end

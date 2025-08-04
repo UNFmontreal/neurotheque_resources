@@ -24,10 +24,12 @@ from .auto_save import AutoSave
 
 # If you have additional steps:
 from .prepchannels import PrepChannelsStep
+
 # from .splittasks import SplitTasksStep
-# etc...    
+# etc...
 from .splittasks_dynamic import SplitTasksStep
 from .epoching import EpochingStep
+
 # If you have specialized steps for analysis:
 try:
     from .triggers_gonogo import GoNoGoTriggerStep
@@ -37,22 +39,24 @@ except ImportError:
 
 
 # Register them in the global STEP_REGISTRY
-STEP_REGISTRY.update({
-    "LoadData": LoadData,
-    "FilterStep": FilterStep,
-    "ICAStep": ICAStep,
-    "ICAExtractionStep": ICAExtractionStep,
-    "ICALabelingStep": ICALabelingStep,
-    "AutoRejectStep": AutoRejectStep,
-    "SaveCheckpoint": SaveCheckpoint,
-    "SaveData": SaveData,
-    "PrepChannelsStep": PrepChannelsStep,
-    "SplitTasksStep": SplitTasksStep,
-    "AutoSave": AutoSave,
-    "EpochingStep": EpochingStep,
-    # If you have them:
-    "GoNoGoTriggerStep": GoNoGoTriggerStep,
-    "GoNoGoEpochingStep": GoNoGoEpochingStep,
-})
+STEP_REGISTRY.update(
+    {
+        "LoadData": LoadData,
+        "FilterStep": FilterStep,
+        "ICAStep": ICAStep,
+        "ICAExtractionStep": ICAExtractionStep,
+        "ICALabelingStep": ICALabelingStep,
+        "AutoRejectStep": AutoRejectStep,
+        "SaveCheckpoint": SaveCheckpoint,
+        "SaveData": SaveData,
+        "PrepChannelsStep": PrepChannelsStep,
+        "SplitTasksStep": SplitTasksStep,
+        "AutoSave": AutoSave,
+        "EpochingStep": EpochingStep,
+        # If you have them:
+        "GoNoGoTriggerStep": GoNoGoTriggerStep,
+        "GoNoGoEpochingStep": GoNoGoEpochingStep,
+    }
+)
 
 logging.info("[__init__.py] All step classes have been registered in STEP_REGISTRY.")

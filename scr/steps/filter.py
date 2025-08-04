@@ -2,11 +2,12 @@
 
 from .base import BaseStep
 
+
 class FilterStep(BaseStep):
     """
     Step to apply bandpass and/or notch filters on an mne.Raw or mne.Epochs object.
     """
-    
+
     def __init__(self, params=None):
         """
         Initialize the FilterStep with parameters.

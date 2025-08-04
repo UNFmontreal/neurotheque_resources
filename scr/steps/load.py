@@ -2,6 +2,7 @@ import mne
 from pathlib import Path
 from .base import BaseStep
 
+
 class LoadData(BaseStep):
     """
         Step to load EEG data from a file. 
@@ -32,7 +33,9 @@ class LoadData(BaseStep):
 
         if file_path.suffix == ".edf":
             stim_channel = self.params.get("stim_channel", "Trigger")
-            raw = mne.io.read_raw_edf(file_path, preload=True, stim_channel=stim_channel)
+            raw = mne.io.read_raw_edf(
+                file_path, preload=True, stim_channel=stim_channel
+            )
         elif file_path.suffix == ".fif":
             raw = mne.io.read_raw_fif(file_path, preload=True)
         else:

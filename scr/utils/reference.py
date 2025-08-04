@@ -3,6 +3,7 @@
 import logging
 import mne
 
+
 def apply_reference(data, params=None):
     """
     Re-references EEG data according to user-specified method.
@@ -34,50 +35,60 @@ def apply_reference(data, params=None):
     """
     if data is None:
         raise ValueError("[apply_reference] No data to re-reference.")
-    
+
     # Default parameters
     if params is None:
         params = {}
-    
+
     method = params.get("method", "average")
     channels = params.get("channels", [])
     projection = params.get("projection", False)
-    
-    logging.info(f"[apply_reference] Re-referencing method={method}, projection={projection}")
-    
+
+    logging.info(
+        f"[apply_reference] Re-referencing method={method}, projection={projection}"
+    )
+
     if method == "average":
         # set_eeg_reference(ref_channels="average") => average re-ref
         logging.info("[apply_reference] Using average reference for EEG channels.")
         try:
             data.set_eeg_reference(ref_channels="average", projection=projection)
         except Exception as e:
-            logging.error(f"[apply_reference] Error applying average reference: {str(e)}")
+            logging.error(
+                f"[apply_reference] Error applying average reference: {str(e)}"
+            )
             raise
-    
+
     elif method == "channels":
         if not channels:
-            raise ValueError("[apply_reference] method='channels' requires 'channels' param.")
-            
+            raise ValueError(
+                "[apply_reference] method='channels' requires 'channels' param."
+            )
+
         # Check if all reference channels exist in the data
         missing_channels = [ch for ch in channels if ch not in data.ch_names]
         if missing_channels:
             error_msg = f"[apply_reference] Reference channel(s) {missing_channels} not found in data. Available channels: {data.ch_names}"
             logging.error(error_msg)
             raise ValueError(error_msg)
-            
-        logging.info(f"[apply_reference] Using custom channels {channels} for reference.")
+
+        logging.info(
+            f"[apply_reference] Using custom channels {channels} for reference."
+        )
         try:
             data.set_eeg_reference(ref_channels=channels, projection=projection)
         except Exception as e:
-            logging.error(f"[apply_reference] Error applying custom channel reference: {str(e)}")
+            logging.error(
+                f"[apply_reference] Error applying custom channel reference: {str(e)}"
+            )
             raise
-    
+
     else:
         raise ValueError(f"[apply_reference] Unknown re-reference method '{method}'.")
-    
+
     # MNE might add new reference channels to the data if channels were used.
     # If projection=True, we have an EEG ref projection added but not applied
     # until you do e.g. data.apply_proj().
-    
+
     logging.info("[apply_reference] Re-reference complete.")
-    return data 
+    return data
