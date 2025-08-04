@@ -24,7 +24,7 @@ def compute_and_plot_psd(
 ) -> Union[plt.Figure, Tuple[plt.Figure, Dict]]:
     """
     Compute and plot power spectral density (PSD) with various options.
-    
+
     Parameters
     ----------
     data : mne.io.Raw or mne.Epochs
@@ -56,7 +56,7 @@ def compute_and_plot_psd(
         Whether to show the figure
     return_data : bool
         Whether to return computed PSD data along with figure
-        
+
     Returns
     -------
     fig : matplotlib.figure.Figure
@@ -349,7 +349,7 @@ def plot_time_frequency(
 ) -> Union[plt.Figure, Tuple[plt.Figure, Any]]:
     """
     Compute and plot time-frequency representation of EEG data.
-    
+
     Parameters
     ----------
     data : mne.io.Raw or mne.Epochs
@@ -378,7 +378,7 @@ def plot_time_frequency(
         Whether to show the figure
     return_data : bool
         Whether to return computed TFR data along with figure
-        
+
     Returns
     -------
     fig : matplotlib.figure.Figure

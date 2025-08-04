@@ -20,7 +20,7 @@ def find_autoreject_log(
 ):
     """
     Find the autoreject log file for a given subject/session/task/run.
-    
+
     Parameters
     ----------
     subject_id : str
@@ -35,7 +35,7 @@ def find_autoreject_log(
         Base directory to search in
     search_derivatives : bool
         Whether to also search in derivatives directory
-        
+
     Returns
     -------
     log_file : str or None
@@ -129,7 +129,7 @@ def load_autoreject_log(
 ):
     """
     Load an autoreject log from a file.
-    
+
     Parameters
     ----------
     filepath : str, optional
@@ -144,7 +144,7 @@ def load_autoreject_log(
         Run ID
     base_dir : str, optional
         Base directory to search in
-        
+
     Returns
     -------
     reject_log : autoreject.RejectLog or None
@@ -179,7 +179,7 @@ def load_autoreject_log(
 def plot_autoreject_summary(reject_log, figsize=(20, 16), save_to=None):
     """
     Create a comprehensive visualization of an autoreject log.
-    
+
     Parameters
     ----------
     reject_log : autoreject.RejectLog
@@ -188,7 +188,7 @@ def plot_autoreject_summary(reject_log, figsize=(20, 16), save_to=None):
         Figure size (width, height) in inches
     save_to : str, optional
         Path to save the figure to. If None, will just display it.
-        
+
     Returns
     -------
     fig : matplotlib.figure.Figure
@@ -405,7 +405,7 @@ def plot_reject_log(
     """
     Create an enhanced version of the RejectLog's plot method with better visibility
     of channel names and clearer visualization.
-    
+
     Parameters
     ----------
     reject_log : autoreject.RejectLog
@@ -416,7 +416,7 @@ def plot_reject_log(
         Figure size as (width, height) in inches
     save_to : str, optional
         Path to save the figure to. If None, will just display it.
-        
+
     Returns
     -------
     fig : matplotlib.figure.Figure
@@ -522,12 +522,12 @@ def scan_for_autoreject_logs(base_dir=None):
     """
     Scan a directory and all subdirectories for any autoreject log files.
     This is useful for debugging when logs are not being found in their expected locations.
-    
+
     Parameters
     ----------
     base_dir : str or Path, optional
         Base directory to start the search from. If None, uses the current directory.
-        
+
     Returns
     -------
     list of str

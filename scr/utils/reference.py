@@ -7,7 +7,7 @@ import mne
 def apply_reference(data, params=None):
     """
     Re-references EEG data according to user-specified method.
-    
+
     Parameters
     ----------
     data : mne.io.Raw or mne.Epochs
@@ -22,15 +22,15 @@ def apply_reference(data, params=None):
         - projection : bool
             If True, add a projection to do the re-reference rather than directly
             modifying data. (default: False)
-    
+
     Returns
     -------
     data : mne.io.Raw or mne.Epochs
         The re-referenced data
-    
+
     Notes
     -----
-    For systems that already have a hardware reference (like Pz), you might want 
+    For systems that already have a hardware reference (like Pz), you might want
     to change to a different reference scheme based on your analysis needs.
     """
     if data is None:

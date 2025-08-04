@@ -18,7 +18,7 @@ import matplotlib
 class AutoRejectStep(BaseStep):
     """
     A streamlined AutoReject step for EEG pipelines that saves bad epochs as annotations.
-    
+
     This step:
     - Creates short (1s) epochs from the incoming data if it's raw data
     - Or uses existing epochs if input data is already epoched
@@ -26,39 +26,39 @@ class AutoRejectStep(BaseStep):
     - Adds bad epochs as annotations to the raw data (if raw was provided)
     - Optionally stores reject_log in data.info["temp"]
     - Optionally saves the AutoReject model state for later use
-    
+
     Expected params:
     --------------------------------------------------------------------------
     ar_params (dict):
         Dictionary of parameters passed directly to AutoReject's constructor
-        
+
     plot_results (bool):
         Whether to generate visualization of rejected epochs (default: True)
-        
+
     interactive (bool):
         Whether to show plots interactively (default: False)
-        
+
     plot_dir (str):
         Directory to save plot figures (default: None)
-        
+
     mode (str):
         Either "fit" (identify bad epochs only) or "fit_transform" (clean data) (default: "fit_transform")
-        
+
     save_cleaned_data (bool):
         Whether to save the cleaned data to disk (default: False)
-        
+
     file_prefix (str):
         Prefix for saved files (default: "autoreject")
-        
+
     output_dir (str or None):
         Directory to save files to (default: None, uses a default location)
-        
+
     store_reject_log (bool):
         Whether to store the reject_log in data.info["temp"] (default: True)
-        
+
     save_model (bool):
         Whether to save the AutoReject model state to disk (default: False)
-        
+
     model_filename (str or None):
         Filename for saved model (default: None, auto-generates a name)
     """
@@ -317,7 +317,7 @@ class AutoRejectStep(BaseStep):
     ):
         """
         Creates a simple visualization of AutoReject results
-        
+
         Parameters
         ----------
         reject_log : instance of autoreject.RejectLog
@@ -477,7 +477,7 @@ class AutoRejectStep(BaseStep):
     ):
         """
         Creates a detailed visualization of channel-wise rejection rates
-        
+
         Parameters
         ----------
         reject_log : instance of autoreject.RejectLog
@@ -860,9 +860,9 @@ class AutoRejectStep(BaseStep):
             reject_log_dict = {
                 "bad_epochs": reject_log.bad_epochs.tolist(),
                 "ch_names": epochs.ch_names,
-                "n_interpolate": ar.n_interpolate_
-                if hasattr(ar, "n_interpolate_")
-                else None,
+                "n_interpolate": (
+                    ar.n_interpolate_ if hasattr(ar, "n_interpolate_") else None
+                ),
                 "consensus": ar.consensus_ if hasattr(ar, "consensus_") else None,
                 "thresholds": ar.threshes_ if hasattr(ar, "threshes_") else None,
                 "n_epochs_total": len(epochs),
@@ -974,12 +974,12 @@ class AutoRejectStep(BaseStep):
     def load_model(model_path):
         """
         Load a previously saved AutoReject model
-        
+
         Parameters
         ----------
         model_path : str
             Path to the saved model file (.h5 or .pkl)
-            
+
         Returns
         -------
         ar : AutoReject

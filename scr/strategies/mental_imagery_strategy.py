@@ -6,7 +6,7 @@ from scr.pipeline import Pipeline
 def run_mental_imagery_pipeline(input_path, output_path, run_id=None):
     """
     Example pipeline for mental imagery tasks.
-    
+
     Parameters:
     -----------
     input_path : str

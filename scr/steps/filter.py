@@ -11,13 +11,13 @@ class FilterStep(BaseStep):
     def __init__(self, params=None):
         """
         Initialize the FilterStep with parameters.
-        
+
         Parameters
         ----------
         params : dict, optional
             Dictionary containing filter parameters:
             - l_freq (float): low cutoff frequency
-            - h_freq (float): high cutoff frequency 
+            - h_freq (float): high cutoff frequency
             - notch_freqs (list): list of freqs to notch out
         """
         super().__init__()
@@ -26,12 +26,12 @@ class FilterStep(BaseStep):
     def run(self, data):
         """
         Apply filtering to the provided data.
-        
+
         Parameters
         ----------
         data : mne.Raw or mne.Epochs
             Data to be filtered
-            
+
         Returns
         -------
         data : mne.Raw or mne.Epochs

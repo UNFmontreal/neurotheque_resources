@@ -30,7 +30,7 @@ class ERPVisualizer:
 
     This class provides various methods to visualize ERPs from MNE Epochs objects,
     including condition comparisons, topographic maps, difference waves, and more.
-    
+
     Attributes
     ----------
     epochs : mne.Epochs
@@ -58,7 +58,7 @@ class ERPVisualizer:
     ):
         """
         Initialize the ERP visualizer with epochs and metadata.
-        
+
         Parameters
         ----------
         epochs : mne.Epochs

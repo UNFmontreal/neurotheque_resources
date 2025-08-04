@@ -8,11 +8,11 @@ from .base import BaseStep
 class GoNoGoEpochingStep(BaseStep):
     """
     Epochs Go/No-Go task data with flexible parameter configuration.
-    
+
     This step creates epochs based on stimulus events for Go and NoGo trials.
     It supports both basic event-based epoching and can also handle
     custom event classifications if available.
-    
+
     Parameters
     ----------
     tmin : float
@@ -35,12 +35,12 @@ class GoNoGoEpochingStep(BaseStep):
     def run(self, data):
         """
         Apply Go/No-Go epoching to the input data.
-        
+
         Parameters
         ----------
         data : mne.io.Raw
             MNE Raw object to be epoched
-            
+
         Returns
         -------
         epochs : mne.Epochs
@@ -122,7 +122,7 @@ class GoNoGoEpochingStep(BaseStep):
     def estimate_performance(self, epochs, response_id=None, response_window=1.0):
         """
         Estimate Go/No-Go performance metrics based on epochs.
-        
+
         Parameters
         ----------
         epochs : mne.Epochs
@@ -131,7 +131,7 @@ class GoNoGoEpochingStep(BaseStep):
             Event ID for response events, if available
         response_window : float
             Time window in seconds to look for responses after stimulus
-            
+
         Returns
         -------
         metrics : dict

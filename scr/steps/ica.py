@@ -19,6 +19,7 @@ from .ica_labeling import ICALabelingStep
 # Re-export the classes for backward compatibility
 __all__ = ["ICAStep", "ICAExtractionStep", "ICALabelingStep"]
 
+
 # Helper function to check and install dependencies
 def _check_install_dependencies():
     """Check for dependencies needed for advanced ICA visualization and try to install if missing."""
@@ -83,10 +84,10 @@ def _check_install_dependencies():
 
 class ICAStep(BaseStep):
     """
-    Original ICA step that logs suggested bad components (EOG/ECG) but does not 
-    automatically exclude them. The user can then inspect those suggestions 
+    Original ICA step that logs suggested bad components (EOG/ECG) but does not
+    automatically exclude them. The user can then inspect those suggestions
     plus the component plots to make a final decision.
-    
+
     This class combines both extraction and labeling functionality and is maintained
     for backward compatibility. For new code, use ICAExtractionStep followed by
     ICALabelingStep instead.
@@ -237,7 +238,9 @@ class ICAStep(BaseStep):
         # 4) Fit ICA
         # --------------------------
         ica.fit(
-            good_epochs, decim=params["decim"], reject=None,
+            good_epochs,
+            decim=params["decim"],
+            reject=None,
         )
         # --------------------------
         # 5) Automated Artifact Detection
@@ -611,7 +614,11 @@ class ICAStep(BaseStep):
             # 1. Standard MNE HTML report
             report = Report(title="ICA Quality Report", verbose=False)
             report.add_ica(
-                ica=ica, title="ICA cleaning", picks=None, inst=data, n_jobs=None,
+                ica=ica,
+                title="ICA cleaning",
+                picks=None,
+                inst=data,
+                n_jobs=None,
             )
             out_file = rep_dir / "ica_report.html"
             report.save(out_file, overwrite=True, open_browser=False)

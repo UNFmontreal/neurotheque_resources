@@ -7,7 +7,7 @@ import pickle
 class SaveData(BaseStep):
     """
     Step to save the data in a BIDS-compliant format.
-    
+
     Example YAML usage:
     ------------------
     - name: SaveData

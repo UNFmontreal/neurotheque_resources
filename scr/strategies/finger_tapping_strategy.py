@@ -6,7 +6,7 @@ from scr.pipeline import Pipeline
 def run_finger_tapping_pipeline(input_path, output_path, run_id=None):
     """
     Example pipeline for finger tapping experiment.
-    
+
     Parameters:
     -----------
     input_path : str

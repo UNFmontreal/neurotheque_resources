@@ -13,15 +13,15 @@ import numpy as np
 def clean_info(info):
     """
     Convert any fixed-length string arrays in the info to lists of Python strings.
-    
+
     This function addresses the 'data type >a not understood' error by converting
     problematic NumPy string arrays to standard Python strings.
-    
+
     Parameters
     ----------
     info : mne.Info or dict
         The MNE info object or dictionary to clean
-    
+
     Returns
     -------
     None
@@ -54,12 +54,12 @@ def clean_info(info):
 def clean_mne_object(obj):
     """
     Clean an MNE object to ensure it can be serialized properly.
-    
+
     Parameters
     ----------
     obj : mne object
         The MNE object to clean (Raw, Epochs, Evoked, ICA, etc.)
-    
+
     Returns
     -------
     mne object
@@ -82,15 +82,15 @@ def clean_mne_object(obj):
 def clean_info_for_saving(info):
     """
     Clean mne.Info object to ensure it can be serialized properly in fif format.
-    
+
     This function preserves as much information as possible while fixing only
     problematic fields that cause serialization errors.
-    
+
     Parameters
     ----------
     info : mne.Info
         The original Info object to be fixed
-    
+
     Returns
     -------
     mne.Info
@@ -152,12 +152,12 @@ def clean_info_for_saving(info):
 def clean_ica_for_saving(ica):
     """
     Clean ICA object to ensure it can be serialized properly.
-    
+
     Parameters
     ----------
     ica : mne.preprocessing.ICA
         The ICA object to clean
-    
+
     Returns
     -------
     mne.preprocessing.ICA
@@ -180,12 +180,12 @@ def clean_ica_for_saving(ica):
 def clean_epochs_for_saving(epochs):
     """
     Clean epochs object to ensure it can be serialized properly.
-    
+
     Parameters
     ----------
     epochs : mne.Epochs
         The epochs object to clean
-    
+
     Returns
     -------
     mne.Epochs

@@ -14,14 +14,14 @@ import pandas as pd
 class BaselineCorrectionStep(BaseStep):
     """
     A step for applying various baseline correction methods to epoched EEG data.
-    
+
     This step implements multiple baseline correction methods:
     - Classic baseline subtraction
     - Regression-based baseline correction (least squares)
     - Huber robust regression
     - RANSAC robust regression
     - Kalman filter for drift removal
-    
+
     Parameters:
     -----------
     params : dict
@@ -60,12 +60,12 @@ class BaselineCorrectionStep(BaseStep):
     def run(self, data):
         """
         Apply baseline correction to the provided epochs.
-        
+
         Parameters:
         -----------
         data : mne.Epochs
             The epoched data to correct
-            
+
         Returns:
         --------
         epochs_corrected : mne.Epochs or dict
@@ -147,9 +147,11 @@ class BaselineCorrectionStep(BaseStep):
         methods = (
             [method]
             if isinstance(method, str) and method != "all"
-            else ["classic", "regression", "huber", "ransac", "kalman"]
-            if method == "all"
-            else method
+            else (
+                ["classic", "regression", "huber", "ransac", "kalman"]
+                if method == "all"
+                else method
+            )
         )
 
         # Log chosen methods

@@ -5,7 +5,7 @@ from .base import BaseStep
 class AutoSave(BaseStep):
     """
     Automatically saves the current data with a step-specific name in a BIDS-compliant format.
-    
+
     Expected params:
     ----------------
     subject_id (str): Subject ID

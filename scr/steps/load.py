@@ -5,9 +5,9 @@ from .base import BaseStep
 
 class LoadData(BaseStep):
     """
-        Step to load EEG data from a file. 
-        If multi-subject, we rely on subject_id, session_id, 
-        but we might also just read input_file directly if it was set.
+    Step to load EEG data from a file.
+    If multi-subject, we rely on subject_id, session_id,
+    but we might also just read input_file directly if it was set.
     """
 
     def run(self, data):

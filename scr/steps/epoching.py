@@ -12,21 +12,21 @@ import os
 class EpochingStep(BaseStep):
     """
     Flexible epoching step that supports multiple task-specific epoching strategies.
-    
+
     This step handles:
     1. Continuous data extraction between start/end triggers
     2. Event-related epoching around specific triggers
     3. Task-specific epoching methods (5-point test, go/no-go, etc.)
-    
+
     Parameters:
     -----------
     task_type : str
         Type of task to epoch ('5pt', 'gng', 'continuous', 'custom')
-    
+
     trigger_ids : dict
         Dictionary mapping trigger names to their numeric IDs
         Example: {'start': 1, 'end': 2, 'onset': 3, 'response': 4}
-    
+
     epoch_params : dict
         Dictionary containing epoching parameters:
         - tmin: start time in seconds relative to trigger (default: -0.2)
@@ -34,13 +34,13 @@ class EpochingStep(BaseStep):
         - baseline: baseline correction period (default: (None, 0))
         - preload: whether to preload data (default: True)
         - reject_by_annotation: whether to reject epochs with annotations (default: True)
-    
+
     extract_continuous : bool
         If True, extracts continuous data between start/end triggers (default: False)
-    
+
     returns_epochs : bool
         If True, returns Epochs object; if False, returns Raw object with selections (default: True)
-    
+
     event_id : dict or None
         Custom event_id dictionary for MNE Epochs (default: None)
     """
@@ -215,7 +215,7 @@ class EpochingStep(BaseStep):
     ):
         """
         Epoch data for the 5-point test task.
-        
+
         For 5PT task:
         - All triggers have the same ID (8)
         - Simple pattern-based approach:
@@ -371,9 +371,11 @@ class EpochingStep(BaseStep):
                 onset=[onset_adjusted],
                 duration=[task_duration],
                 description=["5PT_task_segment"],
-                orig_time=data_cropped.annotations.orig_time
-                if data_cropped.annotations is not None
-                else None,
+                orig_time=(
+                    data_cropped.annotations.orig_time
+                    if data_cropped.annotations is not None
+                    else None
+                ),
             )
 
             # Add existing annotations from the original data
@@ -571,16 +573,16 @@ class EpochingStep(BaseStep):
     ):
         """
         Epoch data for Go/No-Go task.
-        
+
         Typically has:
         - Go stimuli triggers (code 1)
         - NoGo stimuli triggers (code 2)
         - Response triggers (code 3), which indicates a correct response for BOTH go and nogo trials
-        
+
         Classifies trials into:
         - correct_go: Go stimulus (1) followed by response (3) before the next stimulus
         - correct_nogo: NoGo stimulus (2) followed by response (3) before the next stimulus
-        
+
         By default, only correct trials are kept.
         """
         # Log the epoching strategy
@@ -922,9 +924,9 @@ class EpochingStep(BaseStep):
     ):
         """
         Create fixed-length epochs with configurable duration.
-        
+
         This method creates evenly spaced epochs across the data or within a task segment.
-        
+
         Parameters
         ----------
         data : mne.io.Raw
@@ -943,7 +945,7 @@ class EpochingStep(BaseStep):
             (defined by first and last trigger)
         returns_epochs : bool
             If True, return Epochs object; if False, return Raw object
-            
+
         Returns
         -------
         epochs : mne.Epochs or mne.io.Raw
@@ -1088,7 +1090,7 @@ class EpochingStep(BaseStep):
     def save_epochs(self, epochs, output_dir=None):
         """
         Save epochs to disk.
-        
+
         Parameters:
         -----------
         epochs : mne.Epochs
@@ -1150,7 +1152,7 @@ class EpochingStep(BaseStep):
     ):
         """
         Plot epochs in different ways
-        
+
         Parameters:
         -----------
         epochs : mne.Epochs
@@ -1167,7 +1169,7 @@ class EpochingStep(BaseStep):
             Whether to combine channels (for image plot)
         title : str or None
             Plot title
-            
+
         Returns:
         --------
         fig : matplotlib.figure.Figure or list of figures
@@ -1242,9 +1244,9 @@ class EpochingStep(BaseStep):
                     fig = epochs_plot[event_name].plot_image(
                         picks=channels,
                         combine=combine_value,
-                        title=f"Epochs image for {event_name}"
-                        if title is None
-                        else title,
+                        title=(
+                            f"Epochs image for {event_name}" if title is None else title
+                        ),
                     )
                     figures.append(fig)
                 except Exception as e:
@@ -1256,9 +1258,9 @@ class EpochingStep(BaseStep):
                 try:
                     fig = epochs_plot[event_name].plot_psd(
                         picks=channels,
-                        title=f"PSD for {event_name} epochs"
-                        if title is None
-                        else title,
+                        title=(
+                            f"PSD for {event_name} epochs" if title is None else title
+                        ),
                     )
                     figures.append(fig)
                 except Exception as e:
@@ -1274,9 +1276,11 @@ class EpochingStep(BaseStep):
                         .average()
                         .plot_topomap(
                             times=times,
-                            title=f"Topography for {event_name}"
-                            if title is None
-                            else title,
+                            title=(
+                                f"Topography for {event_name}"
+                                if title is None
+                                else title
+                            ),
                         )
                     )
                     figures.append(fig)
@@ -1376,7 +1380,7 @@ class EpochingStep(BaseStep):
                     evoked = epochs_plot[event_name].average()
                     fig, ax = plt.subplots(figsize=(10, 6))
                     times = evoked.times * 1000  # Convert to ms
-                    gfp = np.sqrt(np.mean(evoked.data ** 2, axis=0))
+                    gfp = np.sqrt(np.mean(evoked.data**2, axis=0))
                     ax.plot(times, gfp, linewidth=2)
                     ax.axvline(x=0, color="k", linestyle="--", alpha=0.5)
                     ax.set_xlabel("Time (ms)")
@@ -1411,7 +1415,7 @@ class EpochingStep(BaseStep):
     ):
         """
         Simple visualization of trigger channel and detected events.
-        
+
         Parameters:
         -----------
         raw : mne.io.Raw
@@ -1431,7 +1435,7 @@ class EpochingStep(BaseStep):
             - 'fname': str, filename to use (without extension)
         interactive : bool
             If True, uses interactive plotting for notebooks (default: False)
-            
+
         Returns:
         --------
         fig : matplotlib.figure.Figure
@@ -1610,7 +1614,7 @@ class EpochingStep(BaseStep):
     def _save_figures(self, figures, save_dir=None):
         """
         Save generated figures to disk.
-        
+
         Parameters:
         -----------
         figures : matplotlib.figure.Figure or list
@@ -1676,7 +1680,7 @@ class EpochingStep(BaseStep):
         """
         Generate plots from existing epochs without rerunning the epoching step.
         This provides a convenient way to create different visualizations after epoching.
-        
+
         Parameters:
         -----------
         epochs : mne.Epochs
@@ -1691,7 +1695,7 @@ class EpochingStep(BaseStep):
             - title: Plot title
             - save_plots: Whether to save the generated plots (default: False)
             - save_dir: Directory to save plots in (default: uses project paths)
-            
+
         Returns:
         --------
         figures : matplotlib.figure.Figure or list of figures

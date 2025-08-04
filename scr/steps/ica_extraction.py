@@ -37,6 +37,7 @@ import warnings
 
 warnings.filterwarnings("ignore", message="No OpenGL_accelerate module loaded")
 
+
 # Helper function to check and install dependencies
 def _check_install_dependencies():
     """Check for dependencies needed for advanced ICA visualization and try to install if missing."""
@@ -104,9 +105,9 @@ def _check_install_dependencies():
 class ICAExtractionStep(BaseStep):
     """
     ICA extraction step that computes ICA decomposition and visualizes components.
-    This step focuses only on the extraction of ICA components without automatic 
+    This step focuses only on the extraction of ICA components without automatic
     labeling or artifact removal.
-    
+
     Parameters
     ----------
     n_components : float or int
@@ -130,7 +131,7 @@ class ICAExtractionStep(BaseStep):
         Whether to allow interactive plots
     plot_dir : str
         Directory to save plots
-    
+
     References:
       - Chaumon et al. (2015), J Neurosci Methods
       - Winkler et al. (2015), NeuroImage
@@ -383,7 +384,9 @@ class ICAExtractionStep(BaseStep):
         )
         try:
             ica.fit(
-                good_epochs, decim=params["decim"], reject=None,
+                good_epochs,
+                decim=params["decim"],
+                reject=None,
             )
             logging.info(
                 f"[ICAExtractionStep] ICA fitted successfully. Found {ica.n_components_} components."

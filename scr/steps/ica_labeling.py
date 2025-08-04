@@ -76,10 +76,10 @@ class ICALabelingStep(BaseStep):
     """
     ICA labeling step that identifies artifact components using various methods,
     and optionally removes them from the data.
-    
+
     This step focuses on labeling components and removing artifacts, assuming
     that ICA decomposition has already been computed.
-    
+
     Parameters
     ----------
     methods : list of str
