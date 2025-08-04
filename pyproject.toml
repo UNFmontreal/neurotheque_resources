@@ -11,9 +11,9 @@ authors = [
 description = "A package for processing neurophysiological data."
 readme = "README.md"
 requires-python = ">=3.8"
+license = {text = "MIT"}
 classifiers = [
     "Programming Language :: Python :: 3",
-    "License :: OSI Approved :: MIT License",
     "Operating System :: OS Independent",
 ]
 dependencies = [
@@ -54,3 +54,6 @@ docs = [
     "mkdocs-material",
     "mkdocstrings[python]"
 ]
+
+[tool.setuptools.packages.find]
+include = ["scr", "scr.*"]
