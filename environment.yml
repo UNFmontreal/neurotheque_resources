@@ -1,0 +1,30 @@
+name: neurotheque
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.8
+  - pip
+  - pip:
+    - mne==1.0.0
+    - autoreject==0.3.0
+    - scipy>=1.6.0
+    - matplotlib>=3.3.0
+    - numpy>=1.20.0
+    - mne-icalabel>=0.2.0
+    - statsmodels>=0.12.0
+    - PyYAML>=5.0
+    - scikit-learn>=0.24.0
+    - pandas>=1.2.0
+    - fooof>=1.0.0
+    - PyQt5>=5.15.0
+    - h5io>=0.1.0
+    - click>=8.0
+    - jsonschema>=4.0
+    - Jinja2>=3.0
+    - pytest>=6.0
+    - black
+    - flake8
+    - pre-commit
+    - mkdocs-material
+    - mkdocstrings[python]

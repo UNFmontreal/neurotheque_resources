@@ -267,43 +267,48 @@ class BaselineCorrectionStep(BaseStep):
         # === Method H: Linear Mixed‑Effects Model (GLMM) ===
         if 'glmm' in methods:
             logging.info("[BaselineCorrectionStep] Applying GLMM baseline correction via MixedLM…")
-            # Prepare metadata
-            if epochs.metadata is None or 'subject' not in epochs.metadata:
-                # you must supply subject IDs per epoch
-                raise RuntimeError("epochs.metadata['subject'] must exist for GLMM.")
-            subjects = epochs.metadata['subject'].values  # length n_epochs
-            
-            # preallocate residuals container
-            resid_H = np.zeros_like(data_array)  # shape (n_epochs, n_ch, n_times)
+            # Ensure metadata and subject column
+            if epochs.metadata is None:
+                epochs.metadata = pd.DataFrame(index=np.arange(n_epochs))
+            if 'subject' not in epochs.metadata:
+                logging.info("[BaselineCorrectionStep] No subject metadata found—assigning dummy group for GLMM.")
+                epochs.metadata['subject'] = ['SINGLE'] * n_epochs
+            subjects = epochs.metadata['subject'].values
 
-            # Loop channels & timepoints (consider parallelizing!)
+            resid_H = np.zeros_like(data_array)  # (n_epochs, n_ch, n_times)
+
             for ch in range(n_ch):
                 for t in range(n_times):
-                    # Build DataFrame for this slice
                     df = pd.DataFrame({
                         'voltage':  data_array[:, ch, t],
                         'baseline': baseline_vals[:, ch],
                         'subject':  subjects
                     })
-                    # Fit MixedLM: random intercept & slope on baseline per subject
+                    # Use only a random intercept for SINGLE‑SUBJECT case
                     try:
                         model = smf.mixedlm(
-                            "voltage ~ baseline", 
+                            "voltage ~ baseline",
                             df,
                             groups=df["subject"],
-                            re_formula="~baseline"
+                            re_formula=None  # random intercept only
                         )
-                        fit = model.fit(reml=False, method="lbfgs", warn_convergence=False)
-                        # residuals are baseline‑corrected voltage
+                        # First try L-BFGS
+                        try:
+                            fit = model.fit(reml=False, method="lbfgs", warn_convergence=False)
+                        except Exception:
+                            # fallback to conjugate gradient
+                            fit = model.fit(reml=False, method="cg", warn_convergence=False)
+
                         resid_H[:, ch, t] = fit.resid
                     except Exception as e:
-                        logging.warning(f"[GLMM] Channel {ch} time {t} failed ({e}); falling back to OLS.")
-                        # fallback to simple subtraction
-                        resid_H[:, ch, t] = data_array[:, ch, t] - df['baseline'].values
+                        logging.warning(f"[GLMM] Channel {ch} time {t} failed both optimizers ({e}); fallback to OLS.")
+                        # OLS fallback
+                        ols = LinearRegression().fit(df[['baseline']], df['voltage'])
+                        resid_H[:, ch, t] = df['voltage'] - ols.predict(df[['baseline']])
 
-            # Create new Epochs from residuals
             epochs_H = mne.EpochsArray(resid_H, epochs.info, events, tmin)
-            results['glmm'] = epochs_H        
+            results['glmm'] = epochs_H
+            
         # === Plot comparison of methods ===
         if plot_comparison and len(methods) > 1:
             logging.info("[BaselineCorrectionStep] Generating comparison plot of baseline correction methods...")

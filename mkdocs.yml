@@ -1,0 +1,69 @@
+site_name: Neuroflow
+site_url: https://YannFeurprier.github.io/neurotheque_resources/
+repo_url: https://github.com/YannFeurprier/neurotheque_resources/
+edit_uri: ""
+
+theme:
+  name: material
+  palette:
+    - scheme: default
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/weather-night
+        name: Switch to dark mode
+    - scheme: slate
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/weather-sunny
+        name: Switch to light mode
+  features:
+    - navigation.tabs
+    - navigation.sections
+    - toc.integrate
+    - navigation.top
+    - search.suggest
+    - search.highlight
+    - content.tabs.link
+    - content.code.annotation
+    - content.code.copy
+  language: en
+  logo: assets/logo.png
+
+extra:
+  social:
+    - icon: fontawesome/brands/github-alt
+      link: https://github.com/YannFeurprier
+    - icon: fontawesome/brands/linkedin
+      link: https://www.linkedin.com/in/yann-feurprier/
+
+nav:
+  - "Home": index.md
+  - "Quick Start": quick-start.md
+  - "CLI Reference": cli-reference.md
+  - "Concepts": concepts.md
+  - "API":
+    - "Pipeline": api/pipeline.md
+    - "Steps": api/steps.md
+  - "FAQ": faq.md
+
+plugins:
+  - search
+  - mkdocstrings:
+      handlers:
+        python:
+          options:
+            show_root_heading: yes
+            show_source: yes
+
+markdown_extensions:
+  - pymdownx.highlight
+  - pymdownx.superfences
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
+  - admonition
+  - pymdownx.details
+  - pymdownx.superfences
+  - attr_list
+  - md_in_html

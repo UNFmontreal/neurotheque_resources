@@ -46,7 +46,11 @@ class EpochingStep(BaseStep):
     
     def __init__(self, params=None):
         super().__init__(params)
+        self.metrics = {}
         logging.info(f"[EpochingStep.__init__] Initialized with params: {self.params}")
+    
+    def get_metrics(self):
+        return self.metrics
     
     def run(self, data):
         if data is None:
@@ -407,6 +411,7 @@ class EpochingStep(BaseStep):
                            reject_by_annotation=reject_by_annotation)
         
         logging.info(f"[EpochingStep] Created {len(epochs)} epochs around onset events for 5-point test")
+        self.metrics['n_epochs_5pt'] = len(epochs)
         
         # Calculate and log response times
         if onset_events and response_events:
@@ -606,6 +611,7 @@ class EpochingStep(BaseStep):
             
             logging.info(f"[EpochingStep] Created {len(epochs)} epochs for Go/No-Go task with {len(event_id)} conditions")
             logging.info(f"[EpochingStep] Available conditions: {list(event_id.keys())}")
+            self.metrics['n_epochs_gng'] = len(epochs)
             
             # Store performance metrics in metadata
             try:
@@ -705,6 +711,7 @@ class EpochingStep(BaseStep):
                            reject_by_annotation=reject_by_annotation)
         
         logging.info(f"[EpochingStep] Created {len(epochs)} epochs with custom trigger configuration")
+        self.metrics['n_epochs'] = len(epochs)
         
         return epochs if returns_epochs else data
 

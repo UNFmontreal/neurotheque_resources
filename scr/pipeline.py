@@ -1,15 +1,15 @@
-# File: src/pipeline.py
-
 import yaml
 import logging
 import re
 from pathlib import Path
 import mne
 import pickle
-import glob  # Add this import for the glob module
+import glob
 import os
 from importlib import import_module
-# A global STEP_REGISTRY that maps "step name" -> "step class"
+import json
+from jsonschema import validate
+
 from scr.registry import STEP_REGISTRY
 from scr.steps.project_paths import ProjectPaths
 
@@ -26,8 +26,10 @@ class Pipeline:
     """
 
     def __init__(self, config_file="config/pipeline_config.yaml", config_dict=None):  
-        self.config = self._load_config(config_file, config_dict)
-        self.paths = ProjectPaths(self.config)
+        self.config_file_path = Path(config_file).resolve()
+        self.project_root = self.config_file_path.parent.parent # Assuming config file is in a 'config' directory
+        self.config = self._load_and_validate_config(config_file, config_dict)
+        self.paths = ProjectPaths(self.config, project_root=self.project_root)
         
         # Set default subject/session from config
         self.default_subject = self.config["default_subject"]
@@ -35,45 +37,31 @@ class Pipeline:
         self.default_run = self.config["default_run"]
         
 
-    def _load_config(self, config_file, config_dict):
+    def _load_and_validate_config(self, config_file, config_dict):
         if config_dict:
-            return config_dict
-            
-        with open(config_file) as f:
-            config = yaml.safe_load(f)
-        return config
+            config = config_dict
+        else:
+            with open(config_file) as f:
+                config = yaml.safe_load(f)
 
-    def _resolve_checkpoints(self, steps_def):
-        """
-        Attempt to find a valid checkpoint from a 'SaveCheckpoint' step
-        in the pipeline steps (searching from last to first).
-        If found, load that .fif file into self.data, then skip steps
-        up to that point. 
-        (In multi-subject mode, this logic may load only one global checkpoint.)
-        """
-        for i, step in reversed(list(enumerate(steps_def))):
-            if step["name"] == "SaveCheckpoint":
-                output_path = self.paths.get_derivative_path(
-                    subject_id=self.default_subject,
-                    session_id=self.default_session,
-                    stage="after_autoreject"
-                )
-                full_path = output_path.resolve()
-                
-                if full_path.exists():
-                    try:
-                        # Load the checkpoint file
-                        self.data = mne.io.read_raw_fif(full_path, preload=True)
-                        logging.info(f"Resuming from checkpoint: {full_path}")
-                        return steps_def[i+1:]  # Return steps after the checkpoint
-                    except Exception as e:
-                        logging.error(f"Error loading checkpoint: {e}")
-        return steps_def  # No checkpoint found or load failed
+        # Load the schema
+        schema_path = Path(__file__).parent / 'config_schema.json'
+        with open(schema_path) as f:
+            schema = json.load(f)
+
+        # Validate the config against the schema
+        try:
+            validate(instance=config, schema=schema)
+            logging.info("Configuration is valid.")
+        except Exception as e:
+            logging.error(f"Configuration validation error: {e}")
+            raise
+
+        return config
 
     def run(self):
         """Runs the pipeline for a single subject or multi-subject, depending on config."""
         
-        # Get the requested mode from config
         mode = self.config.get("pipeline_mode", "standard")
         start_from_step = self.config.get("start_from_step", None)
         
@@ -81,105 +69,80 @@ class Pipeline:
         if start_from_step:
             logging.info(f"Will attempt to start from step: {start_from_step}")
         
-        # 1) Multi-subject mode - iterating through files matching a pattern
         if "file_path_pattern" in self.config:
-            steps_def = self.config["pipeline"]["steps"]  
-            
-            # Get the list of files to process based on the pattern
-            pattern = self.config["file_path_pattern"]
-            
-            # Make the pattern absolute if it's not already
-            if not os.path.isabs(pattern):
-                pattern = os.path.join(self.paths.raw_data_dir, pattern)
-            
-            logging.info(f"Looking for files matching pattern: {pattern}")
-            files = glob.glob(pattern)
-            
-            if not files:
-                logging.warning(f"No files found matching pattern: {pattern}")
-                return None
-                
-            logging.info(f"Found {len(files)} files to process")
-            
-            # Process each file
-            for file_path in files:
-                logging.info(f"Processing file: {file_path}")
-                
-                # Extract context from filename
-                sub_id, ses_id, task_id, run_id = self._parse_sub_ses(file_path)
-                
-                # Look for the latest checkpoint for this subject
-                latest_ckpt = self._find_latest_checkpoint(sub_id, ses_id, task_id, run_id)
-                skip_index = None
-                
-                # If we're starting from a specific step, find its index
-                if start_from_step:
-                    skip_index = self._find_step_index(steps_def, start_from_step)
-                    if skip_index is not None:
-                        # Skip to right before the requested step
-                        skip_index -= 1  # We want to start AT the requested step
-                        logging.info(f"Will start from step {start_from_step} (skipping steps [0..{skip_index}])")
-                    else:
-                        logging.warning(f"Requested step '{start_from_step}' not found in pipeline. Starting from beginning.")
-                
-                # Otherwise, use the latest checkpoint if available
-                elif mode != "restart" and latest_ckpt and latest_ckpt.exists():
-                    logging.info(f"Found existing checkpoint => {latest_ckpt}")
-                    # Extract the checkpoint name to determine which steps to skip
-                    parts = latest_ckpt.stem.split('_')
-                    if len(parts) >= 2 and parts[-2] == "after":
-                        step_name = parts[-1]
-                        logging.info(f"Last completed step: {step_name}")
-                        
-                        # Find which step to skip to based on checkpoint name
-                        for i, st in enumerate(steps_def):
-                            if st["name"].lower() == step_name.lower() or \
-                               st["name"].lower() == f"{step_name}step".lower():
-                                skip_index = i
-                                logging.info(f"Will resume after step {st['name']} (index {skip_index})")
-                                break
-                    
-                    # Load the checkpoint if needed
-                    try:
-                        # Only load data if we're skipping steps
-                        if skip_index is not None:
-                            self.data = mne.io.read_raw_fif(latest_ckpt, preload=True)
-                            logging.info("Checkpoint loaded successfully.")
-                    except Exception as e:
-                        logging.error(f"Could not load checkpoint: {e}")
-                        self.data = None
-                        skip_index = None
-                else:
-                    # Starting from scratch
-                    if mode == "restart":
-                        logging.info("Restart mode enabled. Starting from scratch.")
-                    else:
-                        logging.info("No checkpoint found or continuing from start. Starting from scratch.")
-                    self.data = None
-                
-                # Run the steps for this subject, skipping if needed
-                self._run_steps(steps_def, skip_index, sub_id, ses_id, run_id, file_path, task_id)
-            
-            logging.info("[SUCCESS] Pipeline completed (multi-subject).")
-            return None
-
-        # 2) Single-subject mode
+            self._run_multi_subject_mode(mode, start_from_step)
         else:
-            # TODO: Implement single subject mode if needed
-            logging.warning("Single subject mode not fully implemented.")
-            return None
+            self._run_single_subject_mode(mode, start_from_step)
 
-    def _run_steps(self, steps_def, skip_index=None, subject_id=None, session_id=None, run_id=None, file_path=None, task_id=None):
-        """
-        Runs the pipeline steps, optionally skipping steps up to skip_index inclusive.
-        If subject_id/session_id/run_id/task_id are provided, pass them to each step along with 'paths'.
+    def _run_multi_subject_mode(self, mode, start_from_step):
+        steps_def = self.config["pipeline"]["steps"]
+        pattern = self.config["file_path_pattern"]
+
+        if not os.path.isabs(pattern):
+            pattern = os.path.join(self.paths.raw_data_dir, pattern)
         
-        Automatically saves after each step if auto_save is enabled in the config.
-        """
+        files = glob.glob(pattern)
+        if not files:
+            logging.warning(f"No files found matching pattern: {pattern}")
+            return
+
+        logging.info(f"Found {len(files)} files to process")
+        for file_path in files:
+            self.process_single_file(file_path, steps_def, mode, start_from_step)
+
+    def process_single_file(self, file_path, steps_def, mode, start_from_step):
+        logging.info(f"Processing file: {file_path}")
+        sub_id, ses_id, task_id, run_id = self._parse_sub_ses(file_path)
+        
+        context = {
+            "subject_id": sub_id,
+            "session_id": ses_id,
+            "task_id": task_id,
+            "run_id": run_id,
+            "metrics": {}
+        }
+        
+        self.data = None
+        skip_index = self._determine_start_index(steps_def, mode, start_from_step, sub_id, ses_id, task_id, run_id)
+        
+        self._run_steps(steps_def, context, skip_index, file_path)
+        logging.info(f"[SUCCESS] Pipeline completed for {file_path}.")
+
+    def _determine_start_index(self, steps_def, mode, start_from_step, sub_id, ses_id, task_id, run_id):
+        if start_from_step:
+            skip_index = self._find_step_index(steps_def, start_from_step)
+            if skip_index is not None:
+                logging.info(f"Starting from step {start_from_step} (index {skip_index})")
+                return skip_index - 1
+            else:
+                logging.warning(f"Step '{start_from_step}' not found. Starting from beginning.")
+                return None
+
+        if mode == "restart":
+            logging.info("Restart mode enabled. Starting from scratch.")
+            return None
+            
+        latest_ckpt = self._find_latest_checkpoint(sub_id, ses_id, task_id, run_id)
+        if latest_ckpt and latest_ckpt.exists():
+            logging.info(f"Found existing checkpoint => {latest_ckpt}")
+            step_name = latest_ckpt.stem.split('_')[-1]
+            skip_index = self._find_step_index_by_name(steps_def, step_name)
+            if skip_index is not None:
+                try:
+                    self.data = mne.io.read_raw_fif(latest_ckpt, preload=True)
+                    logging.info("Checkpoint loaded successfully.")
+                    return skip_index
+                except Exception as e:
+                    logging.error(f"Could not load checkpoint: {e}")
+                    self.data = None
+        
+        logging.info("No checkpoint found or continuing from start. Starting from scratch.")
+        return None
+
+    def _run_steps(self, steps_def, context, skip_index=None, file_path=None):
         auto_save = self.config.get("auto_save", True)
         
         for i, step_info in enumerate(steps_def):
-            # Skip steps up to the specified index
             if skip_index is not None and i <= skip_index:
                 logging.info(f"Skipping step {i}: {step_info['name']}")
                 continue
@@ -187,136 +150,88 @@ class Pipeline:
             step_name = step_info["name"]
             logging.info(f"Running step {i}: {step_name}")
             
-            # Prepare step parameters
-            step_info.setdefault("params", {})
-            # If we have subject context, pass it in
-            if subject_id and session_id:
-                step_info["params"]["subject_id"] = subject_id
-                step_info["params"]["session_id"] = session_id
-                step_info["params"]["run_id"] = run_id
-                step_info["params"]["task_id"] = task_id
-                step_info["params"]["paths"] = self.paths
-            # If we have a file_path for "LoadData"
+            params = step_info.get("params", {})
+            params.update(context)
+            params["paths"] = self.paths
+            
             if file_path and step_name == "LoadData":
-                step_info["params"]["input_file"] = file_path
+                params["input_file"] = file_path
 
-            # Run the step
             try:
-                self._run_step(step_info)
+                self._run_step(step_name, params, context)
                 logging.info(f"Step {step_name} completed successfully")
                 
-                # Auto-save after this step if enabled (and it's not already a saving step)
                 if auto_save and "Save" not in step_name and self.data is not None:
-                    # Extract the base step name without "Step" suffix
-                    base_name = step_name.replace("Step", "").lower()
-                    
-                    # Create an AutoSave step
-                    save_params = {
-                        "subject_id": subject_id,
-                        "session_id": session_id,
-                        "task_id": task_id,
-                        "run_id": run_id,
-                        "step_name": base_name,
-                        "paths": self.paths
-                    }
-                    
-                    # Import the AutoSave class
-                    from .steps.auto_save import AutoSave
-                    
-                    # Run the auto-save
-                    auto_save_step = AutoSave(save_params)
-                    self.data = auto_save_step.run(self.data)
-                    logging.info(f"Auto-saved after step {step_name}")
+                    self._auto_save_data(context)
             except Exception as e:
                 logging.error(f"Error executing step {step_name}: {e}")
-                # Stop processing further steps on error
                 raise
 
+    def _run_step(self, step_name, params, context):
+        if step_name not in STEP_REGISTRY:
+            raise ValueError(f"Step '{step_name}' not registered.")
+        
+        step_class = STEP_REGISTRY[step_name]
+        step = step_class(params)
+        self.data = step.run(self.data)
+        
+        # Update context with metrics from the step
+        if hasattr(step, 'get_metrics'):
+            context['metrics'].update(step.get_metrics())
+
+    def _auto_save_data(self, context):
+        from .steps.auto_save import AutoSave
+        save_params = {
+            **context,
+            "step_name": "autosave",
+            "paths": self.paths
+        }
+        auto_save_step = AutoSave(save_params)
+        self.data = auto_save_step.run(self.data)
+        logging.info(f"Auto-saved data.")
+
     def _find_step_index(self, steps_def, step_name):
-        """
-        Returns the index of the named step if found, else None.
-        For example, to skip all steps <= index of "AutoRejectStep".
-        """
         for i, st in enumerate(steps_def):
             if st["name"] == step_name:
                 return i
         return None
         
-    def _get_file_pattern(self, steps_def):
-        for st in steps_def:
-            if st["name"] == "LoadData":
-                return st["params"].get("file_path_pattern", None)
-        raise ValueError("No file_path_pattern found in LoadData step for multi-subject.")
-        
+    def _find_step_index_by_name(self, steps_def, step_name_part):
+        for i, st in enumerate(steps_def):
+            if step_name_part.lower() in st["name"].lower():
+                return i
+        return None
+
     def _parse_sub_ses(self, file_path):
-        """
-        Extract sub-xx, ses-yy, task-zz, run-ww from a filename
-        e.g. 'sub-01_ses-001_task-stroop_run-01_raw.edf' -> ('01','001','stroop','01')
-        """
         fname = Path(file_path).name
-        
-        # Initialize with default values
-        sub_id = self.default_subject
-        ses_id = self.default_session
-        task_id = "unknown"
-        run_id = self.default_run
-        
-        # Improved regex patterns with proper boundaries 
-        # Look for patterns like 'sub-01_' or 'sub-01.' (at end of filename)
         sub_match = re.search(r'sub-([^_\.]+)', fname)
         ses_match = re.search(r'ses-([^_\.]+)', fname)
         task_match = re.search(r'task-([^_\.]+)', fname)
         run_match = re.search(r'run-([^_\.]+)', fname)
         
-        if sub_match:
-            sub_id = sub_match.group(1)
-        if ses_match:
-            ses_id = ses_match.group(1)  
-        if task_match:
-            task_id = task_match.group(1)
-        if run_match:
-            run_id = run_match.group(1)
-        
-        return sub_id, ses_id, task_id, run_id
-
-    def _run_step(self, step_info):
-        """Instantiate and execute one pipeline step."""
-        step_name = step_info["name"]
-        params = step_info.get("params", {})
-
-        if step_name not in STEP_REGISTRY:
-            raise ValueError(f"Step '{step_name}' not registered.")
-        step_class = STEP_REGISTRY[step_name]
-        step = step_class(params)
-        self.data = step.run(self.data)
+        return (
+            sub_match.group(1) if sub_match else self.default_subject,
+            ses_match.group(1) if ses_match else self.default_session,
+            task_match.group(1) if task_match else "unknown",
+            run_match.group(1) if run_match else self.default_run
+        )
 
     def _find_latest_checkpoint(self, sub_id, ses_id, task_id=None, run_id=None):
-        """Find the most recent checkpoint file for a subject/session."""
-        # Create the base path for the subject/session
         sub_path = self.paths.processed_dir / f'sub-{sub_id}' / f'ses-{ses_id}'
-        
-        # Create the base filename pattern to match
         base_name = f"sub-{sub_id}_ses-{ses_id}"
-        if task_id:
-            base_name += f"_task-{task_id}"
-        if run_id:
-            base_name += f"_run-{run_id}"
+        if task_id: base_name += f"_task-{task_id}"
+        if run_id: base_name += f"_run-{run_id}"
         
-        # Pattern to match any checkpoint for this subject
         pattern = f"{base_name}_*.fif"
+        checkpoint_files = sorted(sub_path.glob(pattern), key=lambda x: x.stat().st_mtime, reverse=True)
         
-        # Find all matching checkpoint files
-        checkpoint_files = list(sub_path.glob(pattern))
+        if checkpoint_files:
+            logging.info(f"Found latest checkpoint: {checkpoint_files[0]}")
+            return checkpoint_files[0]
         
-        if not checkpoint_files:
-            logging.info(f"No checkpoints found for {base_name}")
-            return None
+        logging.info(f"No checkpoints found for {base_name}")
+        return None
         
-        # Sort by modification time (most recent first)
-        checkpoint_files.sort(key=lambda x: x.stat().st_mtime, reverse=True)
-        
-        latest = checkpoint_files[0]
-        logging.info(f"Found latest checkpoint: {latest}")
-        return latest
-
-
+    def _run_single_subject_mode(self, mode, start_from_step):
+        logging.warning("Single subject mode not fully implemented.")
+        return None

@@ -1,0 +1,56 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "neurotheque_resources"
+version = "0.1.0"
+authors = [
+  { name="Yann", email="yann.feurprier@gmail.com" },
+]
+description = "A package for processing neurophysiological data."
+readme = "README.md"
+requires-python = ">=3.8"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+]
+dependencies = [
+    "mne==1.0.0",
+    "autoreject==0.3.0",
+    "scipy>=1.6.0",
+    "matplotlib>=3.3.0",
+    "numpy>=1.20.0",
+    "mne-icalabel>=0.2.0",
+    "statsmodels>=0.12.0",
+    "PyYAML>=5.0",
+    "scikit-learn>=0.24.0",
+    "pandas>=1.2.0",
+    "fooof>=1.0.0",
+    "PyQt5>=5.15.0",
+    "h5io>=0.1.0",
+    "click>=8.0",
+    "jsonschema>=4.0",
+    "Jinja2>=3.0",
+    "mne-bids>=0.12"
+]
+
+[project.urls]
+"Homepage" = "https://github.com/YannFeurprier/neurotheque_resources"
+"Bug Tracker" = "https://github.com/YannFeurprier/neurotheque_resources/issues"
+
+[project.scripts]
+neuroflow = "scr.cli:cli"
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=6.0",
+    "black",
+    "flake8",
+    "pre-commit"
+]
+docs = [
+    "mkdocs-material",
+    "mkdocstrings[python]"
+]

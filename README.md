@@ -1,195 +1,114 @@
 # Neurotheque Resources
 
 [![License: BSD-3-Clause](https://img.shields.io/badge/License-BSD--3--Clause-blue.svg)](LICENSE)
-[![GitHub stars](https://img.shields.io/github/stars/UNFmontreal/neurotheque_resources.svg)](https://github.com/UNFmontreal/neurotheque_resources/stargazers)
-[![GitHub forks](https://img.shields.io/github/forks/UNFmontreal/neurotheque_resources.svg)](https://github.com/UNFmontreal/neurotheque_resources/network)
 [![Python](https://img.shields.io/badge/Python-3.8%2B-blue.svg)](https://www.python.org/)
-
-<br />
 
 <div align="center">
   <img src="docs/images/pipeline_animation_v2.gif" alt="Neurotheque Pipeline Steps" width="600" />
-  <p><em> </em></p>
 </div>
 
-**Neurotheque Resources** is a comprehensive, modular toolkit for EEG data processing and analysis. Built on state‐of‐the‐art libraries such as [MNE-Python](https://mne.tools/stable/index.html), [autoreject](https://autoreject.github.io/) it enables:
+**Neurotheque Resources** is a comprehensive, modular toolkit for EEG data processing and analysis. Built on state-of-the-art libraries such as [MNE-Python](https://mne.tools/stable/index.html) and [autoreject](https://autoreject.github.io/), it provides a flexible framework for building reproducible EEG processing pipelines.
 
-- **Preprocessing & Channel Setup**: Automatic bad channel detection and re-referencing with standardized electrode montages.
-- **Artifact Rejection**: Advanced methods like ICA and auto-rejection for high-quality EEG data.
-- **Task & Trigger Parsing**: Flexible logic to merge triggers for tasks like Go/No-Go, finger tapping, or mental imagery.
-- **Epoching & Analysis**: Efficient epoch slicing, ROI averaging, time–frequency transforms, and ERP analyses.
-- **Report Generation**: Automated HTML reporting (via MNE's `Report`) for visual inspection and documentation of analysis results.
+## Core Features
 
-This repository is designed for both single-subject and multi-subject pipelines, ensuring reproducibility and scalability.
+- **Modular Pipeline Architecture**: Build custom pipelines by combining a series of processing steps.
+- **Configuration-driven**: Define your pipelines using simple YAML files.
+- **BIDS Compatibility**: Organized to work with BIDS-formatted data.
+- **Artifact Rejection**: Includes advanced methods like ICA and autoreject.
+- **Automated Reporting**: Generate HTML reports with key metrics and plots.
+- **Command-Line Interface**: Run your pipelines easily from the terminal.
 
+## Quick Start
 
----
-## Table of Contents
+Get up and running with Neurotheque in just a few steps.
 
-1. [Repository Structure](#repository-structure)  
-2. [Installation & Quick Start](#installation--quick-start)  
-3. [Usage Examples](#usage-examples)  
-4. [Direct Step Usage](#direct-step-usage)  
-5. [Testing](#testing)  
-6. [Contributors & Acknowledgments](#contributors--acknowledgments)  
-7. [Contributing](#contributing)  
-8. [License](#license)  
-9. [Contact](#contact)
+### 1. Installation
 
-## Repository Structure
-
-- **notebooks/**
-  - **tutorials/** – Step-by-step Jupyter notebooks illustrating basic usage and pipeline demos.  
-  - **preprocessing/** – Notebooks focusing on data cleaning (filtering, ICA, etc.).  
-  - **analysis/** – Notebooks showing advanced analysis tasks (ERP, ROI-based metrics, time–frequency transforms).
-
-- **src/**
-  - **pipeline.py** – The main pipeline driver, reading YAML configs or Python dicts to run each pipeline step in sequence.
-  - **steps/** – A suite of modular processing steps (e.g., `LoadData`, `FilterStep`, `AutoRejectStep`, `ICAStep`, `SplitTasksStep`, `TriggerParsingStep`) that can be combined in various orders.
-  - **strategies/** – Specialized scripts/pipelines for different paradigms (e.g., finger tapping, mental imagery).
-  - **utilities/** – Helper scripts like `combine_py_files.py` (for merging .py files) or `export_repo_structure.py` (for generating directory trees).
-
-- **doc/** – Additional documentation, user guides, or methodology reports.
-
-- **configs/** – YAML files detailing pipeline configurations (e.g., `pilot_preprocessing_strategy.yml`, `gonogo_analysis.yml`, etc.).
-
-- **tests/** – Comprehensive test suite for all components of the pipeline.
-  - **unit/** – Tests for individual steps and utility functions.
-  - **integration/** – Tests for complete workflows and pipeline configurations.
-
----
-
-## Getting Started
-
-## Installation & Quick Start
-
-1. **Clone the repository**:
-    ```bash
-    git clone https://github.com/UNFmontreal/neurotheque_resources.git
-    cd neurotheque_resources
-    ```
-2. **Install dependencies**:
-    ```bash
-    pip install -r requirements.txt
-    ```
-## Usage Examples
-
-1. **Run a Pipeline with a YAML Configuration**
-    ```bash
-    python src/pipeline.py --config configs/pilot_preprocessing_strategy.yml
-    ```
-    This loads the steps specified in the config (e.g. `LoadData`, `FilterStep`, `AutoRejectStep`, etc.) and applies them to your EEG data.
-
-2. **Use a Strategy Script**
-    ```python
-    # Example: Using the finger tapping strategy
-    from src.strategies.finger_tapping_strategy import run_finger_tapping_pipeline
-
-    input_path = "data/raw/sub-01_ses-001_eeg.edf"
-    output_path = "data/processed/sub-01_ses-001_preprocessed.fif"
-
-    run_finger_tapping_pipeline(input_path, output_path)
-    ```
-3. **Explore the Jupyter Notebooks**
-
-## Direct Step Usage
-
-Each processing step in the Neurotheque pipeline can be used independently on MNE data objects, allowing for flexible integration into your custom workflows.
-
-### Basic Pattern
-
-```python
-from scr.steps.filter import FilterStep
-
-# Configure parameters
-filter_params = {
-    "l_freq": 1.0,        # High-pass frequency (Hz)
-    "h_freq": 40.0,       # Low-pass frequency (Hz)
-    "notch_freqs": [50]   # Optional notch filter frequencies (Hz)
-}
-
-# Initialize the step
-filter_step = FilterStep(filter_params)
-
-# Run it on your MNE data
-filtered_data = filter_step.run(your_mne_raw_data)
-```
-
-### Complete Example
-
-Here's a simplified workflow example directly using the processing steps:
-
-```python
-import mne
-from scr.steps.load import LoadData
-from scr.steps.filter import FilterStep
-from scr.steps.autoreject import AutoRejectStep
-from scr.steps.epoching import EpochingStep
-
-# Load data
-load_step = LoadData({"input_file": "your_data.fif"})
-raw_data = load_step.run(None)
-
-# Apply filters
-filter_step = FilterStep({"l_freq": 1.0, "h_freq": 40.0})
-filtered_data = filter_step.run(raw_data)
-
-# Apply AutoReject for artifact detection
-ar_step = AutoRejectStep({"mode": "fit", "plot_results": True})
-ar_data = ar_step.run(filtered_data)
-
-# Create epochs
-events = mne.find_events(ar_data)
-epoch_step = EpochingStep({
-    "tmin": -0.2, "tmax": 0.5, 
-    "baseline": (None, 0),
-    "event_id": {"1": 1}
-})
-epochs = epoch_step.run(ar_data)
-
-print(f"Created {len(epochs)} clean epochs")
-```
-
-For detailed examples of direct step usage, see:
-- [Direct Step Usage Guide](docs/direct_step_usage.md)
-- [Example Script](example_direct_step_usage.py)
-
-## Testing
-
-The Neurotheque pipeline includes a comprehensive test suite to ensure reliability and robustness. The tests are organized into unit tests (for individual components) and integration tests (for workflows and complete pipelines).
-
-### Installing Development Dependencies
-
-To run tests, first install the development dependencies:
+First, clone the repository and install the package in editable mode. This will also install all the required dependencies.
 
 ```bash
-pip install -r requirements-dev.txt
+git clone https://github.com/YannFeurprier/neurotheque_resources.git
+cd neurotheque_resources
+pip install -e .
+```
+
+### 2. Run a Demo Pipeline
+
+You can run a demo pipeline using one of the provided configuration files. For example, to run the minimal Go/No-Go pipeline:
+
+```bash
+neurotheque run-pipeline configs/gonogo_minimal_pipeline.yml
+```
+
+This will process the sample data and generate the results in the `data/processed` and `reports` directories.
+
+## Usage
+
+### Command-Line Interface (CLI)
+
+The primary way to use Neurotheque is through its command-line interface.
+
+`neurotheque run-pipeline [CONFIG_FILE]`
+
+- `CONFIG_FILE`: Path to the YAML configuration file for the pipeline.
+
+### Creating a Custom Pipeline
+
+To create your own pipeline, you can create a new YAML configuration file. The configuration file specifies the steps to be executed and their parameters.
+
+Here is an example of a simple pipeline configuration:
+
+```yaml
+directory:
+  root: "data"
+  raw_data_dir: "raw"
+  processed_dir: "processed"
+  reports_dir: "reports"
+  derivatives_dir: "derivatives"
+
+file_path_pattern: "sub-01/ses-001/eeg/*_eeg.vhdr"
+
+pipeline:
+  steps:
+    - name: LoadData
+    - name: Filter
+      params:
+        l_freq: 1.0
+        h_freq: 40.0
+    - name: Epoching
+      params:
+        task_type: "gng"
+        trigger_ids:
+          go: 1
+          nogo: 2
+          response: 3
+    - name: GenerateReport
+```
+
+You can find more examples in the `configs` directory.
+
+## For Developers
+
+### Setting up the Development Environment
+
+To install the development dependencies, including `pytest` for testing, run:
+
+```bash
+pip install -e .[test]
 ```
 
 ### Running Tests
 
-The test runner script provides several options:
+To run the test suite, use `pytest`:
 
 ```bash
-# Run all tests
-python run_tests.py
-
-# Run only unit tests
-python run_tests.py --unit
-
-# Run only integration tests
-python run_tests.py --integration
-
-# Run tests with coverage reporting
-python run_tests.py --coverage
-
-# Generate HTML coverage report
-python run_tests.py --html
+pytest
 ```
 
-### Test Documentation
+## Contributing
 
-For detailed information about the test suite, including how to add new tests, see the [tests/README.md](tests/README.md) file.
+Contributions are welcome! Please feel free to submit a pull request or open an issue.
 
----
+## License
 
+This project is licensed under the BSD-3-Clause License. See the [LICENSE](LICENSE) file for details.

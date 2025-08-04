@@ -1,180 +1,102 @@
-# File: scr/project_paths.py
-
+import os
 from pathlib import Path
 import re
+import logging
+from mne_bids import BIDSPath, get_bids_path_from_fname
+
 class ProjectPaths:
     """
-    Central class for all file and directory paths.
-    Each method here returns the *final* path for reading/writing,
-    based on subject/session and your folder conventions.
+    Central class for all file and directory paths, ensuring BIDS compliance.
     """
 
-    def __init__(self, config):
-        self.base_dir = Path(config["directory"]["root"]).resolve()
-        self.raw_data_dir = self.base_dir / config["directory"]["raw_data_dir"]
-        self.processed_dir = self.base_dir / config["directory"]["processed_dir"]
-        self.reports_dir = self.base_dir / config["directory"]["reports_dir"]
-        self.derivatives_dir = self.base_dir / config["directory"]["derivatives_dir"]
+    def __init__(self, config, project_root=None):
+        if project_root is None:
+            project_root = Path.cwd()
+        else:
+            project_root = Path(project_root)
+
+        root_path_str = config["directory"]["root"]
         
+        if root_path_str.startswith('~'):
+            self.bids_root = Path(root_path_str).expanduser()
+        elif os.path.isabs(root_path_str):
+            self.bids_root = Path(root_path_str)
+        else:
+            self.bids_root = project_root / root_path_str
+            
+        self.bids_root = self.bids_root.resolve()
+        
+        # Derivatives directory is a sub-directory of the BIDS root
+        self.derivatives_dir = self.bids_root / "derivatives"
+
         # Create base directories
-        self.raw_data_dir.mkdir(parents=True, exist_ok=True)
-        self.processed_dir.mkdir(parents=True, exist_ok=True)
-        self.reports_dir.mkdir(parents=True, exist_ok=True)
+        self.bids_root.mkdir(parents=True, exist_ok=True)
         self.derivatives_dir.mkdir(parents=True, exist_ok=True)
-        
-    def validate_id(self, identifier, id_type):
-        """BIDS-compliant ID validation"""
-        if not re.match(rf"^{id_type}-\d+$", identifier):
-            raise ValueError(f"Invalid {id_type} format: {identifier}. Expected format: {id_type}-<number>")
-        return identifier
-    
-    def get_subject_session_path(self, subject_id, session_id):
-        """Base path for subject/session"""
-        sub = self.validate_id(subject_id, "sub")
-        ses = self.validate_id(session_id, "ses")
-        return self.raw_data_dir / sub / ses
-    
-    def get_raw_eeg_path(self, subject_id, session_id, task_id, run_id=None):
-        """Raw EEG data path following BIDS"""
-        base_path = self.get_subject_session_path(subject_id, session_id)
-        filename = f"{subject_id}_{session_id}_task-{task_id}"
-        if run_id:
-            filename += f"_run-{run_id}"
-        filename += "_eeg.fif"
-        return base_path / "eeg" / filename
-        
+
+    def get_bids_path(self, subject, session, task=None, run=None, processing=None, suffix=None, extension=None):
+        """
+        Constructs a BIDS-compliant path using mne-bids.
+        """
+        bids_path = BIDSPath(
+            subject=subject,
+            session=session,
+            task=task,
+            run=run,
+            processing=processing,
+            suffix=suffix,
+            extension=extension,
+            root=self.derivatives_dir
+        )
+        bids_path.directory.mkdir(parents=True, exist_ok=True)
+        return bids_path
+
+    @staticmethod
+    def get_bids_entities_from_file(file_path):
+        """
+        Extracts BIDS entities from a filename.
+        """
+        return get_bids_path_from_fname(file_path, check=False)
+
+    # --- Deprecated Methods for Backward Compatibility ---
+
+    def _deprecation_warning(self, old_method, new_method):
+        logging.warning(
+            f"`{old_method}` is deprecated and will be removed in a future version. "
+            f"Please use `{new_method}` instead."
+        )
+
     def get_derivative_path(self, subject_id, session_id, task_id=None, run_id=None, stage=None):
-        """Processed data path following BIDS derivatives"""
-        sub = f'sub-{subject_id}'    
-        ses = f'ses-{session_id}'
-        filename = f"{sub}_{ses}"
-        if task_id:
-            filename += f"_task-{task_id}"
-        if run_id:
-            filename += f"_run-{run_id}"
-        if stage:
-            filename += f"_{stage}"
-        filename += ".fif"
-        
-        path = self.processed_dir / sub / ses
-        path.mkdir(parents=True, exist_ok=True)
-        return path / filename
-        
-    def get_split_task_path(self, subject_id, session_id, task_id=None, run_id=None):
-        """Processed data path following BIDS derivatives"""
-        sub = f'sub-{subject_id}'    
-        ses = f'ses-{session_id}'
-        filename = f"{sub}_{ses}"
-        if task_id:
-            filename += f"_task-{task_id}"
-        if run_id:
-            filename += f"_run-{run_id}"
-        filename += "_split.fif"
-        
-        path = self.processed_dir / sub / ses
-        path.mkdir(parents=True, exist_ok=True)
-        return path / filename
-        
+        self._deprecation_warning("get_derivative_path", "get_bids_path")
+        return self.get_bids_path(
+            subject=subject_id,
+            session=session_id,
+            task=task_id,
+            run=run_id,
+            processing=stage,
+            suffix="eeg",
+            extension=".fif"
+        )
+
     def get_report_path(self, report_type, subject_id, session_id, task_id=None, run_id=None, name=None):
-        """Standardized report paths"""
-        sub = self.validate_id(subject_id, "sub")
-        ses = self.validate_id(session_id, "ses")
-        path = self.reports_dir / report_type / sub / ses
-        
+        self._deprecation_warning("get_report_path", "get_bids_path")
+        # Note: BIDSPath doesn't have a direct equivalent for arbitrary report names,
+        # so we construct it manually but keep it in a BIDS-like structure.
+        path = self.derivatives_dir / "reports" / report_type / f"sub-{subject_id}" / f"ses-{session_id}"
         if task_id:
             path = path / f"task-{task_id}"
         if run_id:
             path = path / f"run-{run_id}"
-            
         path.mkdir(parents=True, exist_ok=True)
-        
-        if name:
-            return path / name
-        return path
-    
-    def get_auto_reject_log_path(self, subject_id, session_id, task_id=None, run_id=None):
-        """
-        DEPRECATED: This function is kept for backward compatibility only.
-        
-        AutoReject now stores bad epochs as annotations in the data instead of log files.
-        This makes pipelines simpler and more reliable as annotations are saved with the data.
-        
-        Returns a placeholder path that maintains compatibility with existing code.
-        """
-        import logging
-        logging.warning("get_auto_reject_log_path is deprecated - AutoReject now uses annotations instead of log files")
-        
-        sub = f'sub-{subject_id}'    
-        ses = f'ses-{session_id}'
-        
-        # Create a basic path for compatibility
-        path = self.processed_dir / sub / ses
-        path.mkdir(parents=True, exist_ok=True)
-        return path
-        
+        return path / (name if name else "report.html")
+
     def get_checkpoint_path(self, subject_id, session_id, task_id=None, run_id=None, checkpoint_name=None):
-        """Standardized checkpoint pathing"""
-        sub = f'sub-{subject_id}'    
-        ses = f'ses-{session_id}'
-        filename = f"{sub}_{ses}"
-        if task_id:
-            filename += f"_task-{task_id}"
-        if run_id:
-            filename += f"_run-{run_id}"
-        if checkpoint_name:
-            filename += f"_{checkpoint_name}"
-        filename += ".fif"
-        
-        path = self.processed_dir / sub / ses
-        path.mkdir(parents=True, exist_ok=True)
-        return path / filename
-
-    def get_epoched_file_path(self, subject_id, session_id, task_id=None, run_id=None):
-        """
-        Get the exact path for epoched files in the format required by other scripts.
-        Format: sub-{sub_id}_ses-{ses_id}_task-{task_id}_run-{run_id}_preprocessed-epoched.fif
-        """
-        sub = f'sub-{subject_id}'    
-        ses = f'ses-{session_id}'
-        
-        # Create the filename with the exact format required
-        filename = f"{sub}_{ses}"
-        if task_id:
-            filename += f"_task-{task_id}"
-        if run_id:
-            filename += f"_run-{run_id}"
-        filename += "_preprocessed-epoched.fif"
-        
-        path = self.processed_dir / sub / ses
-        path.mkdir(parents=True, exist_ok=True)
-        return path / filename
-
-    def get_autoreject_report_dir(self, subject_id, session_id, task_id=None, run_id=None):
-        """Standardized report directory with auto-creation"""
-        sub = f'sub-{subject_id}'    
-        ses = f'ses-{session_id}'        
-        path = self.reports_dir / "autoreject" / sub / ses
-        
-        if task_id:
-            path = path / f"task-{task_id}"
-        if run_id:
-            path = path / f"run-{run_id}"
-            
-        path.mkdir(parents=True, exist_ok=True)
-        return path    
-        
-    def get_ica_report_dir(self, subject_id, session_id, task_id=None, run_id=None):
-        """Report directory for ICA results"""
-        path = self.reports_dir / "ica" / subject_id / session_id
-        
-        if task_id:
-            path = path / f"task-{task_id}"
-        if run_id:
-            path = path / f"run-{run_id}"
-            
-        path.mkdir(parents=True, exist_ok=True)
-        return path
-
-    def ensure_parent(self, path: Path):
-        """Convenience method to create the parent folder if missing."""
-        path.parent.mkdir(parents=True, exist_ok=True)
+        self._deprecation_warning("get_checkpoint_path", "get_bids_path")
+        return self.get_bids_path(
+            subject=subject_id,
+            session=session_id,
+            task=task_id,
+            run=run_id,
+            processing=checkpoint_name,
+            suffix="eeg",
+            extension=".fif"
+        )
