@@ -30,6 +30,7 @@ import mne
 import yaml
 from scipy import stats
 import matplotlib.pyplot as plt
+from mne.report import Report
 
 # Ensure project root is importable when running as a script
 import sys
@@ -353,6 +354,82 @@ def regression_baseline(epochs: mne.Epochs, tmin_ref: float, tmax_ref: float,
     return out
 
 
+def apply_regression_baseline_with_mne(epochs: Optional[mne.Epochs], tmin_ref: float, tmax_ref: float,
+                                       add_linear_trend: bool = True) -> Optional[mne.Epochs]:
+    """Attempt MNE's built-in mass-univariate linear regression for baseline removal.
+
+    Builds an epoch-wise design matrix with intercept + baseline mean (and optional baseline slope),
+    then requests residuals as the baseline-regressed signal. Falls back to None if the API is
+    unavailable in the installed MNE version.
+    """
+    if epochs is None or len(epochs) == 0:
+        return None
+    # Try both import locations across MNE versions
+    try:
+        try:
+            from mne.stats import linear_regression as mne_linear_regression  # type: ignore
+        except Exception:
+            from mne.stats.regression import linear_regression as mne_linear_regression  # type: ignore
+    except Exception:
+        logging.info("MNE linear_regression API not available; using custom regression baseline fallback")
+        return None
+
+    t = epochs.times
+    ref = (t >= tmin_ref) & (t <= tmax_ref)
+    if ref.sum() < 3:
+        logging.warning("Regression baseline (MNE): too few samples in baseline window; skipping")
+        return None
+
+    try:
+        # Epoch-level baseline mean across channels/time
+        X = epochs.get_data()  # ep, ch, time
+        base_mean = X[:, :, ref].mean(axis=(1, 2))  # (n_ep,)
+
+        # Optional epoch-level baseline slope computed on channel-averaged signal
+        design = pd.DataFrame({'intercept': 1.0, 'base_mean': base_mean})
+        if add_linear_trend:
+            tt = t[ref]
+            mean_ts = X.mean(axis=1)  # ep, time
+            slopes = []
+            for e in range(mean_ts.shape[0]):
+                y = mean_ts[e, ref]
+                A = np.vstack([tt, np.ones_like(tt)]).T
+                m, b = np.linalg.lstsq(A, y, rcond=None)[0]
+                slopes.append(m)
+            design['base_slope'] = np.asarray(slopes)
+
+        names = list(design.columns)
+        # Request residuals if supported by the installed MNE version
+        picks = mne.pick_types(epochs.info, meg=False, eeg=True, eog=False, stim=False, misc=False, exclude='bads')
+        try:
+            lm_out = mne_linear_regression(epochs, design, names=names, picks=picks, return_residuals=True)  # type: ignore[arg-type]
+        except TypeError:
+            # Older/newer API variant without return_residuals kwarg
+            lm_out = mne_linear_regression(epochs, design, names=names, picks=picks)  # type: ignore[arg-type]
+            lm_out = {'results': lm_out}
+
+        resid_epochs = None
+        if isinstance(lm_out, tuple) and len(lm_out) == 2:
+            # Newer API may return (results, residuals)
+            resid_epochs = lm_out[1]
+        elif isinstance(lm_out, dict) and 'resid' in lm_out:
+            resid_epochs = lm_out['resid']
+        elif isinstance(lm_out, dict) and 'residuals' in lm_out:
+            resid_epochs = lm_out['residuals']
+
+        if isinstance(resid_epochs, mne.Epochs):
+            return resid_epochs
+        # Some versions return EpochsArray in tuple/dict; accept that too
+        if resid_epochs is not None and hasattr(resid_epochs, 'get_data'):
+            return resid_epochs
+
+        logging.info("MNE linear_regression did not return residuals; using custom regression baseline fallback")
+        return None
+    except Exception as e:
+        logging.info(f"MNE regression baseline failed ({e}); using custom regression baseline fallback")
+        return None
+
+
 def safe_picks(info: mne.Info, names):
     picks = [ch for ch in names if ch in info.ch_names]
     if not picks:
@@ -368,6 +445,31 @@ def roi_mean(evoked: mne.Evoked, roi):
         return evoked.data.mean(axis=0), evoked.times
     idx = [evoked.ch_names.index(ch) for ch in picks]
     return evoked.data[idx, :].mean(axis=0), evoked.times
+
+
+def has_enough_channels(info: mne.Info, kind: str = 'eeg', min_count: int = 2) -> bool:
+    try:
+        picks = mne.pick_types(info, meg=False, eeg=(kind == 'eeg'), eog=False, stim=False, exclude='bads')
+        return len(picks) >= min_count
+    except Exception:
+        return False
+
+
+def apply_tfr_baseline_if_possible(tfr, baseline: tuple, mode: str, label: str):
+    try:
+        times = getattr(tfr, 'times', None)
+        if times is None:
+            return tfr
+        b0, b1 = baseline
+        mask = (times >= b0) & (times <= b1)
+        if mask.sum() == 0:
+            logging.warning(f"TFR baseline window {baseline} not within data range for {label}; skipping baseline")
+            return tfr
+        tfr.apply_baseline(baseline=baseline, mode=mode)
+        return tfr
+    except Exception as e:
+        logging.warning(f"TFR baseline application failed for {label}: {e}")
+        return tfr
 
 
 def time_window_indices(times: np.ndarray, tmin: float, tmax: float):
@@ -763,244 +865,6 @@ def compute_mrcp_lrp(epochs_resp: mne.Epochs) -> Tuple[np.ndarray, np.ndarray, n
     return np.asarray(mrcp_vals), np.asarray(lrp_vals), np.asarray(lrp_on)
 
 
-def create_html_report(report_dir: Path, fig_dir: Path, metrics: dict, regression_results: dict):
-    """Create a comprehensive HTML report with all analysis results."""
-    html_content = """
-<!DOCTYPE html>
-<html>
-<head>
-    <title>Five-Point Task EEG Analysis Report</title>
-    <style>
-        body {
-            font-family: Arial, sans-serif;
-            margin: 40px;
-            background-color: #f5f5f5;
-        }
-        .container {
-            max-width: 1200px;
-            margin: 0 auto;
-            background-color: white;
-            padding: 30px;
-            border-radius: 10px;
-            box-shadow: 0 0 10px rgba(0,0,0,0.1);
-        }
-        h1, h2, h3 {
-            color: #333;
-        }
-        h1 {
-            border-bottom: 3px solid #007bff;
-            padding-bottom: 10px;
-        }
-        h2 {
-            margin-top: 40px;
-            border-bottom: 2px solid #ccc;
-            padding-bottom: 5px;
-        }
-        .metrics-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-            gap: 15px;
-            margin: 20px 0;
-        }
-        .metric {
-            background-color: #f8f9fa;
-            padding: 15px;
-            border-radius: 5px;
-            border: 1px solid #dee2e6;
-        }
-        .metric-label {
-            font-weight: bold;
-            color: #495057;
-            font-size: 0.9em;
-        }
-        .metric-value {
-            font-size: 1.2em;
-            color: #007bff;
-            margin-top: 5px;
-        }
-        .figure {
-            margin: 20px 0;
-            text-align: center;
-        }
-        .figure img {
-            max-width: 100%;
-            border: 1px solid #ddd;
-            border-radius: 5px;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-        }
-        .figure-caption {
-            margin-top: 10px;
-            font-style: italic;
-            color: #666;
-        }
-        .regression-results {
-            background-color: #f8f9fa;
-            padding: 20px;
-            border-radius: 5px;
-            margin: 20px 0;
-        }
-        pre {
-            background-color: #f4f4f4;
-            padding: 10px;
-            border-radius: 5px;
-            overflow-x: auto;
-        }
-        .warning {
-            background-color: #fff3cd;
-            border: 1px solid #ffeeba;
-            color: #856404;
-            padding: 10px;
-            border-radius: 5px;
-            margin: 10px 0;
-        }
-    </style>
-</head>
-<body>
-    <div class="container">
-        <h1>Five-Point Task EEG Analysis Report</h1>
-        
-        <h2>Summary Metrics</h2>
-        <div class="metrics-grid">
-"""
-    
-    # Add metrics
-    for key, value in metrics.items():
-        if isinstance(value, (int, float)) and not np.isnan(value):
-            html_content += f'''
-            <div class="metric">
-                <div class="metric-label">{key.replace('_', ' ').title()}</div>
-                <div class="metric-value">{value:.3f}</div>
-            </div>
-'''
-    
-    html_content += """
-        </div>
-        
-        <h2>Event-Related Potentials</h2>
-        
-        <div class="figure">
-            <img src="figures/erp_stim_occ.png" alt="Stimulus-locked Occipital ERPs">
-            <div class="figure-caption">Stimulus-locked ERPs at occipital sites showing P1/N1 components</div>
-        </div>
-        
-        <div class="figure">
-            <img src="figures/erp_stim_cpar.png" alt="Stimulus-locked Centro-parietal ERPs">
-            <div class="figure-caption">Stimulus-locked ERPs at centro-parietal sites showing P3/CPP/CNV</div>
-        </div>
-"""
-    
-    # Add response-locked if available
-    if (fig_dir / 'erp_resp_cz.png').exists():
-        html_content += """
-        <div class="figure">
-            <img src="figures/erp_resp_cz.png" alt="Response-locked MRCP">
-            <div class="figure-caption">Response-locked MRCP at Cz showing motor preparation</div>
-        </div>
-"""
-    
-    # Add baseline comparison
-    html_content += """
-        <h2>Baseline Correction Methods</h2>
-        <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px;">
-            <div class="figure">
-                <img src="figures/erp_stim_cpz_classic.png" alt="Classic baseline">
-                <div class="figure-caption">Classic baseline</div>
-            </div>
-            <div class="figure">
-                <img src="figures/erp_stim_cpz_zscore.png" alt="Z-score baseline">
-                <div class="figure-caption">Robust z-score</div>
-            </div>
-            <div class="figure">
-                <img src="figures/erp_stim_cpz_regression.png" alt="Regression baseline">
-                <div class="figure-caption">Regression-based</div>
-            </div>
-        </div>
-        
-        <h2>Time-Frequency Analysis</h2>
-        
-        <div class="figure">
-            <img src="figures/tfr_stim.png" alt="Stimulus-locked TFR">
-            <div class="figure-caption">Stimulus-locked time-frequency representation at Pz</div>
-        </div>
-"""
-    
-    if (fig_dir / 'tfr_resp.png').exists():
-        html_content += """
-        <div class="figure">
-            <img src="figures/tfr_resp.png" alt="Response-locked TFR">
-            <div class="figure-caption">Response-locked time-frequency representation at Cz</div>
-        </div>
-"""
-    
-    # Add stroke analysis if available
-    if (fig_dir / 'stroke_analysis.png').exists():
-        html_content += """
-        <h2>Execution Phase Analysis</h2>
-        
-        <div class="figure">
-            <img src="figures/stroke_analysis.png" alt="Stroke-locked analysis">
-            <div class="figure-caption">Stroke-locked motor features during drawing execution</div>
-        </div>
-"""
-    
-    # Add regression results
-    if regression_results:
-        html_content += """
-        <h2>Statistical Results</h2>
-"""
-        
-        if (fig_dir / 'regression_results.png').exists():
-            html_content += """
-        <div class="figure">
-            <img src="figures/regression_results.png" alt="Regression results">
-            <div class="figure-caption">Regression coefficients for predicting behavioral outcomes</div>
-        </div>
-"""
-        
-        for outcome, result in regression_results.items():
-            if 'error' not in result:
-                html_content += f"""
-        <div class="regression-results">
-            <h3>Predictors of {outcome.replace('_', ' ').title()}</h3>
-            <p><strong>R²:</strong> {result.get('r_squared', 0):.3f}</p>
-            <p><strong>N trials:</strong> {result.get('n_trials', 0)}</p>
-            <p><strong>Formula:</strong> <code>{result.get('formula', 'N/A')}</code></p>
-        </div>
-"""
-    
-    html_content += """
-        <h2>Output Files</h2>
-        <ul>
-            <li><a href="single_trial_metrics.csv">Single-trial EEG features (CSV)</a></li>
-            <li><a href="fivepoint_trials.csv">Trial timing data (CSV)</a></li>
-            <li><a href="summary_metrics.json">Summary metrics (JSON)</a></li>
-"""
-    
-    if (report_dir / 'stroke_features.csv').exists():
-        html_content += """
-            <li><a href="stroke_features.csv">Stroke-level features (CSV)</a></li>
-"""
-    
-    if (report_dir / 'regression_results.json').exists():
-        html_content += """
-            <li><a href="regression_results.json">Regression results (JSON)</a></li>
-"""
-    
-    html_content += """
-        </ul>
-        
-        <hr style="margin-top: 50px;">
-        <p style="text-align: center; color: #666; font-size: 0.9em;">
-            Generated by Five-Point Task EEG Analysis Pipeline
-        </p>
-    </div>
-</body>
-</html>
-"""
-    
-    # Save HTML report
-    with open(report_dir / 'report.html', 'w') as f:
-        f.write(html_content)
 
 
 def run_mixed_effects_regression(features_df: pd.DataFrame, outcome: str, predictors: List[str]) -> Dict:
@@ -1252,9 +1116,11 @@ def main():
     e_stimZ = robust_z(e_stim, -0.5, -0.1)
     e_respZ = robust_z(e_resp, -1.2, -0.2) if e_resp is not None else None
 
-    # 3) Regression-based baseline removal
-    e_stim_reg = regression_baseline(e_stim, -0.5, -0.1, add_linear_trend=True)
-    e_resp_reg = regression_baseline(e_resp, -1.2, -0.2, add_linear_trend=True) if e_resp is not None else None
+    # 3) Regression-based baseline removal (prefer MNE built-in when available)
+    e_stim_reg_builtin = apply_regression_baseline_with_mne(e_stim, -0.5, -0.1, add_linear_trend=True)
+    e_stim_reg = e_stim_reg_builtin if e_stim_reg_builtin is not None else regression_baseline(e_stim, -0.5, -0.1, add_linear_trend=True)
+    e_resp_reg_builtin = apply_regression_baseline_with_mne(e_resp, -1.2, -0.2, add_linear_trend=True) if e_resp is not None else None
+    e_resp_reg = e_resp_reg_builtin if e_resp_reg_builtin is not None else (regression_baseline(e_resp, -1.2, -0.2, add_linear_trend=True) if e_resp is not None else None)
 
     # ERPs for all three methods
     ev_stim = e_stimZ.average()
@@ -1295,6 +1161,42 @@ def main():
         plt.close('all')
     except Exception as e:
         logging.warning(f"Could not generate baseline comparison figures: {e}")
+
+    # Comparison figures: classic vs z vs regression (response-locked, Cz)
+    try:
+        if ev_resp is not None:
+            pick_cz = safe_picks(ev_resp.info, ['Cz']) or (['Cz'] if 'Cz' in ev_resp.ch_names else [ev_resp.ch_names[0]])
+            figs_r = []
+            for evk, label in [
+                (ev_resp_classic, 'classic'), (ev_resp, 'zscore'), (ev_resp_reg, 'regression')
+            ]:
+                if evk is None:
+                    continue
+                f = evk.plot(picks=pick_cz, titles=f'Resp Cz ({label})', show=False)
+                figs_r.append((f, label))
+            for f, label in figs_r:
+                (f if isinstance(f, list) else [f])[0].savefig(fig_dir / f'erp_resp_cz_{label}.png', dpi=150)
+            plt.close('all')
+    except Exception as e:
+        logging.warning(f"Could not generate response baseline comparison figures: {e}")
+
+    # Joint ERP plots using MNE built-ins
+    try:
+        if has_enough_channels(ev_stim.info, 'eeg', min_count=2):
+            picks_joint_stim = safe_picks(ev_stim.info, roi_cpar)
+            if not picks_joint_stim or len(picks_joint_stim) < 2:
+                picks_joint_stim = None
+            fig_joint_stim = ev_stim.plot_joint(picks=picks_joint_stim, show=False)
+            fig_joint_stim.savefig(fig_dir / 'erp_stim_joint.png', dpi=150)
+        if ev_resp is not None and has_enough_channels(ev_resp.info, 'eeg', min_count=2):
+            picks_joint_resp = safe_picks(ev_resp.info, roi_cz)
+            if not picks_joint_resp or len(picks_joint_resp) < 2:
+                picks_joint_resp = None
+            fig_joint_resp = ev_resp.plot_joint(picks=picks_joint_resp, show=False)
+            fig_joint_resp.savefig(fig_dir / 'erp_resp_joint.png', dpi=150)
+        plt.close('all')
+    except Exception as e:
+        logging.warning(f"Could not generate joint ERP plots: {e}")
 
     # ERP metrics
     def window_mean(evk: mne.Evoked, roi, t0, t1, mode='mean'):
@@ -1382,7 +1284,7 @@ def main():
         # Use new API: compute_tfr instead of tfr_morlet
         tfr_resp = e_resp.copy().pick(picks_resp).compute_tfr(method='morlet', freqs=freqs, n_cycles=n_cycles,
                                                                use_fft=True, return_itc=False, average=True, n_jobs=1)
-        tfr_resp.apply_baseline(baseline=(-0.8, -0.2), mode='logratio')
+        tfr_resp = apply_tfr_baseline_if_possible(tfr_resp, baseline=(-0.8, -0.2), mode='logratio', label='resp')
         fig_tfr_resp = tfr_resp.plot(picks='Cz' if 'Cz' in e_resp.ch_names else None, show=False)
         (fig_tfr_resp[0] if isinstance(fig_tfr_resp, list) else fig_tfr_resp).savefig(fig_dir / 'tfr_resp.png', dpi=150)
         plt.close('all')
@@ -1392,7 +1294,7 @@ def main():
     # Use new API: compute_tfr instead of tfr_morlet
     tfr_stim = e_stim.copy().pick(picks_stim).compute_tfr(method='morlet', freqs=freqs, n_cycles=n_cycles,
                                                            use_fft=True, return_itc=False, average=True, n_jobs=1)
-    tfr_stim.apply_baseline(baseline=(-0.5, -0.1), mode='logratio')  # Adjusted to fit within epoch range
+    tfr_stim = apply_tfr_baseline_if_possible(tfr_stim, baseline=(-0.5, -0.1), mode='logratio', label='stim')
     fig_tfr_stim = tfr_stim.plot(picks='Pz' if 'Pz' in e_stim.ch_names else None, show=False)
     (fig_tfr_stim[0] if isinstance(fig_tfr_stim, list) else fig_tfr_stim).savefig(fig_dir / 'tfr_stim.png', dpi=150)
     plt.close('all')
@@ -1512,6 +1414,37 @@ def main():
                                  suffixes=('', '_enhanced'))
         
         single.to_csv(report_dir / 'single_trial_metrics.csv', index=False)
+
+        # RT relationship figures
+        try:
+            if len(RTs) and 'ideation_time' in single.columns:
+                # RT distribution
+                fig, ax = plt.subplots(figsize=(6, 4))
+                ax.hist(RTs[~np.isnan(RTs)], bins=20, edgecolor='black', alpha=0.7)
+                ax.set_xlabel('RT (s)'); ax.set_ylabel('Count'); ax.set_title('RT distribution')
+                fig.tight_layout(); fig.savefig(fig_dir / 'rt_hist.png', dpi=150); plt.close(fig)
+
+            # RT vs CPP slope (enhanced if available)
+            if 'ideation_time' in single.columns and ('cpp_slope' in single.columns or 'cpp_slope_stim' in single.columns):
+                y_col = 'cpp_slope' if 'cpp_slope' in single.columns else 'cpp_slope_stim'
+                valid = single[['ideation_time', y_col]].dropna()
+                if len(valid) > 5:
+                    fig, ax = plt.subplots(figsize=(5, 4))
+                    ax.scatter(valid['ideation_time'], valid[y_col], alpha=0.6)
+                    ax.set_xlabel('RT (s)'); ax.set_ylabel('CPP slope'); ax.set_title('RT vs CPP slope')
+                    fig.tight_layout(); fig.savefig(fig_dir / 'rt_scatter_cpp_slope.png', dpi=150); plt.close(fig)
+
+            # RT vs P3 amplitude
+            if 'ideation_time' in single.columns and 'p3_amp' in single.columns:
+                valid = single[['ideation_time', 'p3_amp']].dropna()
+                if len(valid) > 5:
+                    fig, ax = plt.subplots(figsize=(5, 4))
+                    ax.scatter(valid['ideation_time'], valid['p3_amp'], alpha=0.6)
+                    ax.set_xlabel('RT (s)'); ax.set_ylabel('P3 amplitude')
+                    ax.set_title('RT vs P3 amplitude')
+                    fig.tight_layout(); fig.savefig(fig_dir / 'rt_scatter_p3_amp.png', dpi=150); plt.close(fig)
+        except Exception as e:
+            logging.warning(f"Could not create RT relationship figures: {e}")
         
         # Stroke-locked analysis if execution data available
         if do_execution_analysis and len(stroke_events) > 0:
@@ -1645,6 +1578,80 @@ def main():
         import traceback
         traceback.print_exc()
 
+    # Fast vs slow RT overlays and epoch images
+    try:
+        if len(RTs) > 0 and len(e_stimZ) == len(RTs):
+            med_rt = np.nanmedian(RTs)
+            fast_idx = (RTs <= med_rt)
+            slow_idx = (RTs > med_rt)
+            if fast_idx.sum() >= 3 and slow_idx.sum() >= 3:
+                ev_fast = e_stimZ[fast_idx].average()
+                ev_slow = e_stimZ[slow_idx].average()
+                try:
+                    from mne.viz import plot_compare_evokeds
+                    pick_cpz = safe_picks(ev_fast.info, ['CPz', 'Pz']) or ['Cz']
+                    if len(pick_cpz) >= 2:
+                        fig = plot_compare_evokeds({'fast': ev_fast, 'slow': ev_slow}, picks=pick_cpz, show=False, combine='mean')
+                    else:
+                        fig = plot_compare_evokeds({'fast': ev_fast, 'slow': ev_slow}, picks=pick_cpz, show=False)
+                    fig.savefig(fig_dir / 'erp_stim_cpz_fast_slow.png', dpi=150)
+                    plt.close(fig)
+                except Exception:
+                    pass
+
+            # Epoch image sorted by RT
+            try:
+                order = np.argsort(RTs)
+                pick_img = safe_picks(e_stimZ.info, ['CPz', 'Pz']) or ['Cz']
+                fig_img = e_stimZ.copy().plot_image(picks=pick_img, order=order, show=False)
+                (fig_img if isinstance(fig_img, list) else [fig_img])[0].savefig(fig_dir / 'epochs_image_stim_cpz.png', dpi=150)
+                plt.close('all')
+            except Exception:
+                pass
+    except Exception as e:
+        logging.warning(f"Could not generate fast/slow overlays or epoch image: {e}")
+
+    # Fast vs slow TFRs using built-in viz
+    try:
+        if len(RTs) > 0 and len(e_stim) == len(RTs):
+            med_rt = np.nanmedian(RTs)
+            e_fast = e_stim[RTs <= med_rt]
+            e_slow = e_stim[RTs > med_rt]
+            if len(e_fast) >= 3:
+                tfr_fast = e_fast.copy().pick(picks_stim).compute_tfr(method='morlet', freqs=freqs, n_cycles=n_cycles,
+                                                                      use_fft=True, return_itc=False, average=True, n_jobs=1)
+                tfr_fast = apply_tfr_baseline_if_possible(tfr_fast, baseline=(-0.5, -0.1), mode='logratio', label='stim-fast')
+                fig_tf = tfr_fast.plot(picks='Pz' if 'Pz' in e_stim.ch_names else None, show=False)
+                (fig_tf[0] if isinstance(fig_tf, list) else fig_tf).savefig(fig_dir / 'tfr_stim_fast.png', dpi=150)
+                plt.close('all')
+            if len(e_slow) >= 3:
+                tfr_slow = e_slow.copy().pick(picks_stim).compute_tfr(method='morlet', freqs=freqs, n_cycles=n_cycles,
+                                                                       use_fft=True, return_itc=False, average=True, n_jobs=1)
+                tfr_slow = apply_tfr_baseline_if_possible(tfr_slow, baseline=(-0.5, -0.1), mode='logratio', label='stim-slow')
+                fig_tf = tfr_slow.plot(picks='Pz' if 'Pz' in e_stim.ch_names else None, show=False)
+                (fig_tf[0] if isinstance(fig_tf, list) else fig_tf).savefig(fig_dir / 'tfr_stim_slow.png', dpi=150)
+                plt.close('all')
+
+        if e_resp is not None and len(RTs) > 0 and len(e_resp) == len(RTs):
+            med_rt = np.nanmedian(RTs)
+            e_fast_r = e_resp[RTs <= med_rt]
+            e_slow_r = e_resp[RTs > med_rt]
+            if len(e_fast_r) >= 3:
+                tfr_fast_r = e_fast_r.copy().pick(picks_resp).compute_tfr(method='morlet', freqs=freqs, n_cycles=n_cycles,
+                                                                          use_fft=True, return_itc=False, average=True, n_jobs=1)
+                tfr_fast_r = apply_tfr_baseline_if_possible(tfr_fast_r, baseline=(-0.8, -0.2), mode='logratio', label='resp-fast')
+                fig_tf = tfr_fast_r.plot(picks='Cz' if 'Cz' in e_resp.ch_names else None, show=False)
+                (fig_tf[0] if isinstance(fig_tf, list) else fig_tf).savefig(fig_dir / 'tfr_resp_fast.png', dpi=150)
+                plt.close('all')
+            if len(e_slow_r) >= 3:
+                tfr_slow_r = e_slow_r.copy().pick(picks_resp).compute_tfr(method='morlet', freqs=freqs, n_cycles=n_cycles,
+                                                                           use_fft=True, return_itc=False, average=True, n_jobs=1)
+                tfr_slow_r = apply_tfr_baseline_if_possible(tfr_slow_r, baseline=(-0.8, -0.2), mode='logratio', label='resp-slow')
+                fig_tf = tfr_slow_r.plot(picks='Cz' if 'Cz' in e_resp.ch_names else None, show=False)
+                (fig_tf[0] if isinstance(fig_tf, list) else fig_tf).savefig(fig_dir / 'tfr_resp_slow.png', dpi=150)
+                plt.close('all')
+    except Exception as e:
+        logging.warning(f"Could not generate fast/slow TFRs: {e}")
     # Save metrics JSON
     with open(report_dir / 'summary_metrics.json', 'w') as f:
         json.dump(metrics, f, indent=2)
@@ -1656,19 +1663,44 @@ def main():
     })
     df_trials.to_csv(report_dir / 'fivepoint_trials.csv', index=False)
 
-    # Create comprehensive HTML report
-    # Get regression_results from the try block or use empty dict
-    regression_results_final = {}
-    if 'single' in locals():  # Check if single-trial analysis was successful
-        try:
-            regression_results_final = regression_results
-        except NameError:
-            pass
-    create_html_report(report_dir, fig_dir, metrics, regression_results_final)
+    # Build MNE Report using saved figures
+    try:
+        report = Report(title='Five-Point Task EEG Analysis')
+        # ERP figures
+        for fname in ['erp_stim_occ.png', 'erp_stim_cpar.png', 'erp_resp_cz.png',
+                      'erp_stim_cpz_classic.png', 'erp_stim_cpz_zscore.png', 'erp_stim_cpz_regression.png',
+                      'erp_resp_cz_classic.png', 'erp_resp_cz_zscore.png', 'erp_resp_cz_regression.png',
+                      'erp_stim_joint.png', 'erp_resp_joint.png']:
+            fpath = fig_dir / fname
+            if fpath.exists():
+                report.add_image(str(fpath), title=fname.replace('_', ' ').replace('.png',''), tags=('ERP',))
+        # TFR figures
+        for fname in ['tfr_stim.png', 'tfr_resp.png', 'tfr_stim_fast.png', 'tfr_stim_slow.png', 'tfr_resp_fast.png', 'tfr_resp_slow.png']:
+            fpath = fig_dir / fname
+            if fpath.exists():
+                report.add_image(str(fpath), title=fname.replace('_', ' ').replace('.png',''), tags=('TFR',))
+        # Stroke analysis
+        fpath = fig_dir / 'stroke_analysis.png'
+        if fpath.exists():
+            report.add_image(str(fpath), title='Stroke analysis', tags=('Execution',))
+        # RT relationships
+        for fname in ['rt_hist.png', 'rt_scatter_cpp_slope.png', 'rt_scatter_p3_amp.png', 'erp_stim_cpz_fast_slow.png', 'epochs_image_stim_cpz.png']:
+            fpath = fig_dir / fname
+            if fpath.exists():
+                report.add_image(str(fpath), title=fname.replace('_', ' ').replace('.png',''), tags=('RT',))
+        # Regression results bar chart
+        fpath = fig_dir / 'regression_results.png'
+        if fpath.exists():
+            report.add_image(str(fpath), title='Regression results', tags=('Stats',))
+        # Save report
+        out_html = report_dir / 'report.html'
+        report.save(str(out_html), overwrite=True, open_browser=False)
+        logging.info(f"Saved MNE report to: {out_html}")
+    except Exception as e:
+        logging.warning(f"Could not build MNE report: {e}")
     
     logging.info(f"Saved figures to: {fig_dir}")
     logging.info(f"Saved metrics to: {report_dir}")
-    logging.info(f"View comprehensive report at: {report_dir / 'report.html'}")
 
 
 if __name__ == "__main__":
