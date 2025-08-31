@@ -1,0 +1,46 @@
+{
+  "ideation_time": {
+    "formula": "ideation_time ~ cpp_slope + cpp_onset + pre_alpha + p1_amp + n1_amp + p3_amp",
+    "n_trials": 60,
+    "r_squared": 0.029976475991936535,
+    "coefficients": {
+      "Intercept": 0.7160849767254445,
+      "cpp_slope": -6.940248064710771e-05,
+      "cpp_onset": -0.14685544648257726,
+      "pre_alpha": -51337.15204318847,
+      "p1_amp": -0.3527629290250622,
+      "n1_amp": -0.38919428006541845,
+      "p3_amp": -0.16228172390430512
+    },
+    "p_values": {
+      "Intercept": 0.012199471633831987,
+      "cpp_slope": 0.9960333441219367,
+      "cpp_onset": 0.274275024758398,
+      "pre_alpha": 0.5652408538908109,
+      "p1_amp": 0.012199799737109645,
+      "n1_amp": 0.012200507546056016,
+      "p3_amp": 0.012196847511265175
+    },
+    "confidence_intervals": {
+      "0": {
+        "Intercept": 0.1623044240161875,
+        "cpp_slope": -0.02791029282625658,
+        "cpp_onset": -0.4133068742571643,
+        "pre_alpha": -229106.0331250407,
+        "p1_amp": -0.6255713804636793,
+        "n1_amp": -0.6901794433957229,
+        "p3_amp": -0.2877774146496063
+      },
+      "1": {
+        "Intercept": 1.2698655294347014,
+        "cpp_slope": 0.027771487864962363,
+        "cpp_onset": 0.11959598129200977,
+        "pre_alpha": 126431.72903866378,
+        "p1_amp": -0.07995447758644503,
+        "n1_amp": -0.088209116735114,
+        "p3_amp": -0.03678603315900392
+      }
+    },
+    "summary": "                            OLS Regression Results                            \n==============================================================================\nDep. Variable:          ideation_time   R-squared:                       0.030\nModel:                            OLS   Adj. R-squared:                 -0.022\nMethod:                 Least Squares   F-statistic:                    0.5769\nDate:                Fri, 29 Aug 2025   Prob (F-statistic):              0.633\nTime:                        22:42:20   Log-Likelihood:                -57.804\nNo. Observations:                  60   AIC:                             123.6\nDf Residuals:                      56   BIC:                             132.0\nDf Model:                           3                                         \nCovariance Type:            nonrobust                                         \n==============================================================================\n                 coef    std err          t      P>|t|      [0.025      0.975]\n------------------------------------------------------------------------------\nIntercept      0.7161      0.276      2.590      0.012       0.162       1.270\ncpp_slope   -6.94e-05      0.014     -0.005      0.996      -0.028       0.028\ncpp_onset     -0.1469      0.133     -1.104      0.274      -0.413       0.120\npre_alpha  -5.134e+04   8.87e+04     -0.579      0.565   -2.29e+05    1.26e+05\np1_amp        -0.3528      0.136     -2.590      0.012      -0.626      -0.080\nn1_amp        -0.3892      0.150     -2.590      0.012      -0.690      -0.088\np3_amp        -0.1623      0.063     -2.590      0.012      -0.288      -0.037\n==============================================================================\nOmnibus:                       89.140   Durbin-Watson:                   2.185\nProb(Omnibus):                  0.000   Jarque-Bera (JB):             1526.141\nSkew:                           4.266   Prob(JB):                         0.00\nKurtosis:                      26.187   Cond. No.                     4.63e+32\n==============================================================================\n\nNotes:\n[1] Standard Errors assume that the covariance matrix of the errors is correctly specified.\n[2] The smallest eigenvalue is 1.11e-62. This might indicate that there are\nstrong multicollinearity problems or that the design matrix is singular."
+  }
+}

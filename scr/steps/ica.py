@@ -244,12 +244,20 @@ class ICAStep(BaseStep):
                 f"[ICAStep] Suggested {entry['type']} components (threshold={entry['threshold']}): {entry['indices']}"
             )
 
+        # Union of all suggested components (EOG/ECG/etc.)
+        union_candidates = set()
+        for entry in bad_ic_candidates:
+            union_candidates.update(int(i) for i in entry["indices"])
+
         # The user sees these logs, or you can print them to console:
         if bad_ic_candidates:
             print("\n[ICAStep] Candidate bad ICs from automatic detection:")
             for entry in bad_ic_candidates:
                 print(f"  {entry['type']} => {entry['indices']} (threshold={entry['threshold']})")
-            print("These are NOT excluded yet. You will get a chance to confirm or modify.\n")
+            if params["interactive"]:
+                print("These are NOT excluded yet. You will get a chance to confirm or modify.\n")
+            elif params.get("auto_exclude", False):
+                print("Auto-excluding detected components in non-interactive mode.\n")
 
         # --------------------------
         # 7) Interactive QA
@@ -303,10 +311,7 @@ class ICAStep(BaseStep):
                     plt.close(fig_sources)
                     print(f"[ICAStep] Source time courses saved to {fig_path}")
             
-            # Show properties of candidate bad components
-            union_candidates = set()
-            for entry in bad_ic_candidates:
-                union_candidates.update(entry["indices"])
+            # Show properties of candidate bad components (union already computed)
 
             # If you want to see topographies of the candidate ICs (union of EOG, ECG, etc.):
             if union_candidates:
@@ -385,7 +390,13 @@ class ICAStep(BaseStep):
                 print("No components manually selected. Using only automatically detected components.")
                 final_exclude = union_candidates
         else:
-            logging.info("[ICAStep] Non-interactive mode. Using only 'exclude' param from YAML.")
+            logging.info("[ICAStep] Non-interactive mode.")
+            # Optionally auto-exclude union of detected components
+            if params.get("auto_exclude", False) and union_candidates:
+                logging.info(f"[ICAStep] Auto-excluding detected components: {sorted(list(union_candidates))}")
+                final_exclude.update(union_candidates)
+            else:
+                logging.info("[ICAStep] Using only 'exclude' param from YAML.")
 
         # Assign to ica.exclude
         ica.exclude = sorted(list(final_exclude))
@@ -404,7 +415,9 @@ class ICAStep(BaseStep):
         # 8) Apply ICA
         # --------------------------
         data_clean = ica.apply(data.copy())
-        ica_dir = paths.get_derivative_path(sub_id, ses_id) / f'sub-{sub_id}_ses-{ses_id}_desc-ica_cleaned.fif'
+        # Save to a proper derivative file path (no extra directory creation)
+        # End filename with _eeg.fif to satisfy MNE naming conventions
+        ica_dir = paths.get_derivative_path(sub_id, ses_id, task_id=task_id, run_id=run_id, stage='desc-ica_cleaned_eeg')
         
         # Ensure parent directory exists
         os.makedirs(os.path.dirname(str(ica_dir)), exist_ok=True)
@@ -418,8 +431,7 @@ class ICAStep(BaseStep):
             logging.info("[ICAStep] Trying alternative path...")
             
             # Try an alternative path if there's an issue
-            alt_dir = Path(os.path.join(str(paths.get_derivative_path(sub_id, ses_id)), 
-                                     f'sub-{sub_id}_ses-{ses_id}_desc-ica_cleaned.fif'))
+            alt_dir = paths.get_derivative_path(sub_id, ses_id, task_id=task_id, run_id=run_id, stage='desc-ica_cleaned')
             try:
                 os.makedirs(os.path.dirname(str(alt_dir)), exist_ok=True)
                 data_clean.save(str(alt_dir), overwrite=True)
@@ -509,29 +521,43 @@ class ICAStep(BaseStep):
                 # Don't try to classify if package isn't available
             else:
                 import mne_icalabel
-                
-                # The correct approach is to use a specific function that works with ICA objects
-                # Import method differently to make clear what we're doing
                 from mne_icalabel.label_components import label_components
-                
-                # This function expects both the ICA object and the data instance
+
                 logging.info("[ICAStep] Running ICLabel classification")
-                
-                # Need to prepare an appropriate inst parameter (Raw or Epochs)
-                if isinstance(data, mne.io.Raw):
-                    ic_labels = label_components(ica=ica, inst=data, method="iclabel")
+                # Run classification; handle multiple return API variants
+                res = label_components(ica=ica, inst=data, method="iclabel")
+
+                # Normalize output to a dict with keys we expect
+                if isinstance(res, tuple):
+                    # Common API: (labels, y_pred_proba, classes)
+                    labels = res[0]
+                    y_pred_proba = res[1] if len(res) > 1 else None
+                    classes = list(res[2]) if len(res) > 2 else []
+                    ic_labels = {
+                        'labels': labels,
+                        'y_pred_proba': y_pred_proba,
+                        'labels_set': classes,
+                    }
+                elif isinstance(res, dict):
+                    ic_labels = res
+                    if 'labels_set' not in ic_labels:
+                        # Try common alternate key names
+                        if 'classes' in ic_labels:
+                            ic_labels['labels_set'] = list(ic_labels['classes'])
+                        else:
+                            ic_labels['labels_set'] = ['brain','muscle','eye','heart','line_noise','channel_noise','other']
                 else:
-                    # If data is already Epochs, use it directly
-                    ic_labels = label_components(ica=ica, inst=data, method="iclabel")
-                
-                logging.info(f"[ICAStep] ICLabel classification successful: {ic_labels['labels']}")
+                    raise TypeError(f"Unexpected ICLabel return type: {type(res)}")
+
+                logging.info(f"[ICAStep] ICLabel classification successful: {ic_labels.get('labels')}")
                 has_iclabel = True
-                
-                # Add ICLabel results to artifact_labels
-                for label in ['eye', 'heart', 'muscle', 'line_noise']:
-                    indices = [idx for idx, l in enumerate(ic_labels['labels']) if l == label]
-                    if indices:
-                        artifact_labels[f'ICLabel_{label.capitalize()}'] = indices
+
+                # Add ICLabel results to artifact_labels if present
+                if 'labels' in ic_labels and ic_labels['labels'] is not None:
+                    for label in ['eye', 'heart', 'muscle', 'line_noise']:
+                        indices = [idx for idx, l in enumerate(ic_labels['labels']) if l == label]
+                        if indices:
+                            artifact_labels[f'ICLabel_{label.capitalize()}'] = indices
         except Exception as e:
             logging.warning(f"[ICAStep] ICLabel classification failed: {e}")
             # Just continue without ICLabel classification
@@ -597,16 +623,21 @@ class ICAStep(BaseStep):
             ax_overview.legend(handles, labels, loc='upper right', ncol=len(handles))
             
             # Add ICLabel probabilities if available
-            if has_iclabel:
+            if has_iclabel and ic_labels.get('y_pred_proba') is not None:
                 ax_iclabel = fig_components.add_subplot(gs[1])
                 ax_iclabel.set_title("ICLabel Classification Probabilities", fontsize=14, fontweight='bold')
-                
-                # Set up the x and y axes
-                ax_iclabel.set_xlim(0, n_components)
+
+                # Prepare probabilities (ensure 2D: n_comp x n_classes)
+                proba = np.asarray(ic_labels['y_pred_proba'])
+                if proba.ndim == 1:
+                    proba = proba[None, :]
+                n_comp_from_proba = proba.shape[0]
+
+                # Axes and styles
+                ax_iclabel.set_xlim(0, n_comp_from_proba)
                 ax_iclabel.set_ylabel("Probability")
                 ax_iclabel.set_ylim(0, 1)
-                
-                # Define colors for each class
+
                 class_colors = {
                     'brain': 'green',
                     'muscle': 'purple',
@@ -614,29 +645,25 @@ class ICAStep(BaseStep):
                     'heart': 'red',
                     'line_noise': 'orange',
                     'channel_noise': 'brown',
-                    'other': 'gray'
+                    'other': 'gray',
                 }
-                
-                # For each component, stack bars for each class probability
-                x = np.arange(n_components)
-                bottoms = np.zeros(n_components)
-                
-                # Sort classes by their "badness" (brain first, then others)
+
+                x = np.arange(n_comp_from_proba)
+                bottoms = np.zeros(n_comp_from_proba)
+
                 sorted_classes = ['brain', 'muscle', 'eye', 'heart', 'line_noise', 'channel_noise', 'other']
-                
+                classes = ic_labels.get('labels_set', sorted_classes)
+
                 for class_name in sorted_classes:
-                    if class_name in ic_labels['labels_set']:
-                        class_idx = ic_labels['labels_set'].index(class_name)
-                        probs = [p[class_idx] for p in ic_labels['y_pred_proba']]
-                        ax_iclabel.bar(x, probs, bottom=bottoms, color=class_colors[class_name], 
-                                     label=class_name, alpha=0.7)
-                        bottoms += np.array(probs)
-                
-                # Add legend
+                    if class_name in classes:
+                        class_idx = list(classes).index(class_name)
+                        probs = proba[:, class_idx]
+                        ax_iclabel.bar(x, probs, bottom=bottoms, color=class_colors[class_name],
+                                       label=class_name, alpha=0.7)
+                        bottoms += probs
+
                 ax_iclabel.legend(loc='upper right', ncol=len(class_colors))
-                
-                # Add component numbers
-                for i in range(n_components):
+                for i in range(n_comp_from_proba):
                     ax_iclabel.text(i, -0.05, str(i), ha='center', va='center', fontsize=8)
             
             # Add topomap summary
@@ -667,10 +694,23 @@ class ICAStep(BaseStep):
                 
                 # Add classification metadata if available
                 classification_text = f"Component {comp_idx}\n"
-                if has_iclabel:
+                if has_iclabel and 'labels' in ic_labels and ic_labels['labels'] is not None:
                     label = ic_labels['labels'][comp_idx]
-                    prob = ic_labels['y_pred_proba'][comp_idx][ic_labels['labels_set'].index(label)]
-                    classification_text += f"ICLabel: {label.capitalize()} ({prob:.2f})\n"
+                    classes = ic_labels.get('labels_set', [])
+                    proba = ic_labels.get('y_pred_proba', None)
+                    prob_txt = ""
+                    if proba is not None and len(classes) > 0:
+                        arr = np.asarray(proba)
+                        if arr.ndim == 1:
+                            arr = arr[None, :]
+                        if comp_idx < arr.shape[0] and label in classes:
+                            class_idx = list(classes).index(label)
+                            try:
+                                prob_val = float(arr[comp_idx, class_idx])
+                                prob_txt = f" ({prob_val:.2f})"
+                            except Exception:
+                                prob_txt = ""
+                    classification_text += f"ICLabel: {label.capitalize()}{prob_txt}\n"
                 
                 # Mark if it's excluded
                 if comp_idx in ica.exclude:
