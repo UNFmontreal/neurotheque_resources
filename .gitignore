@@ -6,6 +6,9 @@
 .\amica_out
 .\data\ 
 *.html
+# Include specific figures directory and all its contents
+!reports/fivepoint/fivepoint/analysis/01/001/task-5pt/run-01/figures/
+!reports/fivepoint/fivepoint/analysis/01/001/task-5pt/run-01/figures/**
 combined_code.py
 combined_py_files.py
 export_repo_structure.py
