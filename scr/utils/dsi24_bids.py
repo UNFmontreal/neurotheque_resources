@@ -335,6 +335,61 @@ def _patch_eeg_sidecar(
     with eeg_json_path.open("w", encoding="utf-8") as f:
         json.dump(meta, f, indent=2)
 
+def _patch_coordsystem_to_template(bids_path: "BIDSPath", space_label: str = "standard_1020") -> None:
+    """
+    Ensure coordsystem/electrodes describe template 10-20 positions (not digitized) and
+    rename any CapTrak-labeled files in this subject/session EEG directory to the given space label.
+
+    This handles both session-level files (no task/run) and run-level files.
+    """
+    try:
+        eeg_dir = Path(bids_path.directory)
+        if not eeg_dir.exists():
+            return
+
+        # Update any CapTrak coordsystem JSONs found in this directory
+        for cs_path in eeg_dir.glob("*_space-CapTrak_coordsystem.json"):
+            try:
+                with cs_path.open("r", encoding="utf-8") as f:
+                    meta = json.load(f)
+                meta["EEGCoordinateSystem"] = "Other"
+                meta["EEGCoordinateUnits"] = "m"
+                desc = meta.get("EEGCoordinateSystemDescription", "")
+                note = (
+                    "Template MNE 'standard_1020' 10-20 positions (not digitized). "
+                    "RAS head axes: LPA-RPA = +X, nasion = +Y, vertex = +Z."
+                )
+                if not desc:
+                    meta["EEGCoordinateSystemDescription"] = note
+                elif "standard_1020" not in desc:
+                    meta["EEGCoordinateSystemDescription"] = f"{desc} Template: {note}"
+                meta["AnatomicalLandmarkCoordinateSystem"] = "Other"
+                meta["AnatomicalLandmarkCoordinateUnits"] = "m"
+                with cs_path.open("w", encoding="utf-8") as f:
+                    json.dump(meta, f, indent=2)
+            except Exception:
+                continue
+
+            # Rename to requested space label
+            new_cs_path = cs_path.with_name(cs_path.name.replace("space-CapTrak", f"space-{space_label}"))
+            try:
+                if not new_cs_path.exists():
+                    cs_path.replace(new_cs_path)
+            except Exception:
+                pass
+
+        # Rename electrodes TSVs similarly
+        for elec_path in eeg_dir.glob("*_space-CapTrak_electrodes.tsv"):
+            new_elec_path = elec_path.with_name(elec_path.name.replace("space-CapTrak", f"space-{space_label}"))
+            try:
+                if not new_elec_path.exists():
+                    elec_path.replace(new_elec_path)
+            except Exception:
+                pass
+    except Exception:
+        # Non-fatal; continue without raising
+        pass
+
 # ---------- Task-aware writer ----------
 def _write_one_bids_run(
     raw: BaseRaw,
@@ -376,6 +431,11 @@ def _write_one_bids_run(
         recording_type="continuous",
         eeg_ground_text="Fpz"
     )
+    # Ensure coordsystem/electrodes reflect template 10-20 positions (not CapTrak)
+    try:
+        _patch_coordsystem_to_template(bids_path, space_label="standard_1020")
+    except Exception:
+        pass
     return bids_path
 
 def bidsify_edf(
