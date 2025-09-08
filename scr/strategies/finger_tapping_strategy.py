@@ -1,6 +1,7 @@
-# src/strategies/finger_tapping_strategy.py
+# scr/strategies/finger_tapping_strategy.py
 
 from scr.pipeline import Pipeline
+
 
 def run_finger_tapping_pipeline(input_path, output_path, run_id=None):
     """
@@ -23,15 +24,11 @@ def run_finger_tapping_pipeline(input_path, output_path, run_id=None):
             "steps": [
                 {
                     "name": "LoadData",
-                    "params": {"file_path": input_path}
+                    "params": {"input_file": input_path}
                 },
                 {
-                    "name": "Filter",
+                    "name": "FilterStep",
                     "params": {"l_freq": 1, "h_freq": 40}
-                },
-                {
-                    "name": "TriggerParsing",
-                    "params": {"task": "finger_tapping"}
                 },
                 # Possibly do TFR in a specialized step if you like,
                 # or epoching for key presses

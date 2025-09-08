@@ -1,6 +1,7 @@
-# src/strategies/mental_imagery_strategy.py
+# scr/strategies/mental_imagery_strategy.py
 
 from scr.pipeline import Pipeline
+
 
 def run_mental_imagery_pipeline(input_path, output_path, run_id=None):
     """
@@ -23,28 +24,25 @@ def run_mental_imagery_pipeline(input_path, output_path, run_id=None):
             "steps": [
                 {
                     "name": "LoadData",
-                    "params": {"file_path": input_path}
+                    "params": {"input_file": input_path}
                 },
                 {
-                    "name": "Filter",
+                    "name": "FilterStep",
                     "params": {"l_freq": 1, "h_freq": 100, "notch_freqs": [60, 120]}
                 },
                 {
-                    "name": "TriggerParsing",
-                    "params": {"task": "mental_imagery"}
-                },
-                {
-                    "name": "Epoching",
+                    "name": "EpochingStep",
                     "params": {
-                        "event_id": {
+                        "task_type": "custom",
+                        "trigger_ids": {
                             "Iright_stimulus": 1,
                             "Ileft_stimulus": 2,
                             "right_stimulus": 3,
                             "left_stimulus": 4
                         },
-                        "tmin": -5,
-                        "tmax": 30,
-                        "baseline": [None, 0]
+                        "epoch_params": {"tmin": -5, "tmax": 30, "baseline": [None, 0]},
+                        "stim_channel": "Trigger",
+                        "returns_epochs": True
                     }
                 },
                 {
