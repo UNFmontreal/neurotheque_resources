@@ -49,14 +49,11 @@ tools/dev/
 .DS_Store
 .vscode/
 
-#folders
+# folders (keep sources tracked; ignore generated data/artifacts)
 /data/
 /derivatives/
 /reports/
 /logs/
-/notebooks/
-/tests/
 /venv/
 /env/
 /figures/
-/logs/

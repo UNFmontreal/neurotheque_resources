@@ -35,9 +35,8 @@
           "returns_epochs": true
         }
       },
-      { "name": "SaveCheckpoint", "params": { "overwrite": true } }
+      { "name": "SaveCheckpoint", "params": { "checkpoint_key": "after_autoreject" } }
     ]
   },
   "pipeline_mode": "standard"
 }
-

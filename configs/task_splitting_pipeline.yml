@@ -24,7 +24,6 @@ pipeline:
 
     - name: SplitTasksStep
       params:
-        output_folder: "data/pilot_data/split_tasks"
         tasks:
           - name: "rest"
             start_trigger: 6

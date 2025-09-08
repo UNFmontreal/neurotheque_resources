@@ -15,9 +15,13 @@ class SplitTasksStep(BaseStep):
         if data is None:
             raise ValueError("[SplitTasksStep] No data to split.")
 
-        output_folder = self.params.paths.get_split_task_path(self.params.subject_id, self.params.session_id)
-        if not output_folder:
-            raise ValueError("[SplitTasksStep] 'output_folder' param is required.")
+        sub_id = self.params.get("subject_id")
+        ses_id = self.params.get("session_id")
+        paths = self.params.get("paths")
+        if not (sub_id and ses_id and paths):
+            raise ValueError("[SplitTasksStep] Missing 'subject_id', 'session_id', or 'paths'.")
+        output_folder = paths.get_split_task_path(sub_id, ses_id).parent
+        os.makedirs(output_folder, exist_ok=True)
 
         events = mne.find_events(data, stim_channel='Trigger',
                                  min_duration=0.001, consecutive=False)

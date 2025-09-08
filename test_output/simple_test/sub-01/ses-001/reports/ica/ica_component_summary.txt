@@ -1,0 +1,9 @@
+ICA Component Analysis Summary
+==============================
+
+Subject: 01, Session: 001
+Total components: 5
+Excluded components: 0 - []
+
+Component Classifications:
+-------------------------

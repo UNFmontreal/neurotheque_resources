@@ -12,6 +12,7 @@ import os
 import re
 import sys
 from pathlib import Path
+import difflib
 import glob
 
 import mne
@@ -198,8 +199,74 @@ class Pipeline:
 
         # 2) Single-subject mode
         else:
-            # TODO: Implement single subject mode if needed
-            logger.warning("Single subject mode not fully implemented.")
+            steps_def = self.config["pipeline"]["steps"]
+
+            subject_id = self.default_subject
+            session_id = self.default_session
+            run_id = self.default_run
+            task_id = self.config.get("default_task")
+
+            # If LoadData specifies an explicit input_file, parse task/run from it when possible
+            input_file = None
+            for st in steps_def:
+                if st.get("name") == "LoadData":
+                    input_file = st.get("params", {}).get("input_file")
+                    break
+
+            file_path = None
+            if input_file:
+                file_path = str(Path(os.path.expandvars(os.path.expanduser(input_file))).resolve())
+                # Try to parse IDs from filename for consistency
+                p_sub, p_ses, p_task, p_run = self._parse_sub_ses(file_path)
+                subject_id = p_sub or subject_id
+                session_id = p_ses or session_id
+                run_id = p_run or run_id
+                task_id = p_task or task_id
+
+            # Determine skip point: explicit step or latest checkpoint
+            skip_index = None
+            if start_from_step:
+                skip_index = self._find_step_index(steps_def, start_from_step)
+                if skip_index is not None:
+                    skip_index -= 1  # start at requested step
+                    logger.info(f"Will start from step {start_from_step} (skipping [0..{skip_index}])")
+            else:
+                # Try resuming from latest checkpoint unless in restart mode
+                if mode != "restart":
+                    latest_ckpt = self._find_latest_checkpoint(subject_id, session_id, task_id, run_id)
+                    if latest_ckpt and latest_ckpt.exists():
+                        logger.info(f"Found existing checkpoint => {latest_ckpt}")
+                        parts = latest_ckpt.stem.split('_')
+                        step_name = None
+                        if len(parts) >= 2 and parts[-2] == "after":
+                            step_name = parts[-1]
+                        if step_name:
+                            for i, st in enumerate(steps_def):
+                                nm = st.get("name", "")
+                                if nm.lower() == step_name.lower() or nm.lower() == f"{step_name}step".lower():
+                                    skip_index = i
+                                    logger.info(f"Will resume after step {nm} (index {skip_index})")
+                                    break
+                        try:
+                            if skip_index is not None:
+                                self.data = mne.io.read_raw_fif(latest_ckpt, preload=True)
+                                logger.info("Checkpoint loaded successfully.")
+                        except Exception as e:
+                            logger.error(f"Could not load checkpoint: {e}")
+                            self.data = None
+                            skip_index = None
+
+            # Run the configured steps
+            self._run_steps(
+                steps_def,
+                skip_index=skip_index,
+                subject_id=subject_id,
+                session_id=session_id,
+                run_id=run_id,
+                file_path=file_path,
+                task_id=task_id,
+            )
+            logger.info("[SUCCESS] Pipeline completed (single-subject).")
             return None
 
     def _run_steps(self, steps_def, skip_index=None, subject_id=None, session_id=None, run_id=None, file_path=None, task_id=None):
@@ -318,7 +385,16 @@ class Pipeline:
         params = step_info.get("params", {})
 
         if step_name not in STEP_REGISTRY:
-            raise ValueError(f"Step '{step_name}' not registered.")
+            # Try friendly error with suggestions
+            registered = list(STEP_REGISTRY.keys())
+            # Common mistake: missing 'Step' suffix
+            alt = f"{step_name}Step"
+            hints = []
+            if alt in STEP_REGISTRY:
+                hints.append(alt)
+            hints += difflib.get_close_matches(step_name, registered, n=3, cutoff=0.6)
+            hint_txt = f" Did you mean: {', '.join(sorted(set(hints)))}?" if hints else ""
+            raise ValueError(f"Step '{step_name}' not registered.{hint_txt}")
         step_class = STEP_REGISTRY[step_name]
         step = step_class(params)
         self.data = step.run(self.data)

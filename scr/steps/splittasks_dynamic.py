@@ -14,7 +14,6 @@ class SplitTasksStep(BaseStep):
     Example YAML snippet:
       - name: SplitTasksStep
         params:
-          output_folder: "data/pilot_data/tasks"
           tasks:
             - name: "GoNoGo"
               start_trigger: 7
@@ -23,11 +22,8 @@ class SplitTasksStep(BaseStep):
               start_trigger: 6
               end_trigger: 7
 
-    The pipeline will rewrite `output_folder` if multi-subject mode is used,
-    so each subject ends up with:
-      data/pilot_data/tasks/sub-01/ses-001/GoNoGo.fif
-      data/pilot_data/tasks/sub-01/ses-001/Rest.fif
-    etc.
+    Output locations are derived from `ProjectPaths.get_split_task_path(sub, ses, ...)`.
+    In multi-subject mode the runner passes `subject_id/session_id` for each file.
     """
 
     def run(self, data):

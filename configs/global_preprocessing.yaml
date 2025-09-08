@@ -4,7 +4,7 @@ pipeline:
   steps:
     - name: LoadData
       params:
-        file_path: "../data/pilot_data/sub-01_ses-001_raw.edf"
+        input_file: "../data/pilot_data/sub-01_ses-001_raw.edf"
 
     - name: PrepChannelsStep
       params:
@@ -37,5 +37,4 @@ pipeline:
         overwrite: true
 
     - name: SplitTasksStep
-      params:
-        output_folder: "../data/pilot_data/"
+      params: {}

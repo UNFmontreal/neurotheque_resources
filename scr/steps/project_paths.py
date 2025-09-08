@@ -1,7 +1,8 @@
-# File: scr/project_paths.py
+# File: scr/steps/project_paths.py
 
 from pathlib import Path
 import re
+
 class ProjectPaths:
     """
     Central class for all file and directory paths.
@@ -22,22 +23,32 @@ class ProjectPaths:
         self.reports_dir.mkdir(parents=True, exist_ok=True)
         self.derivatives_dir.mkdir(parents=True, exist_ok=True)
         
+    def _normalize_id(self, identifier: str | int, id_type: str) -> str:
+        """Accept '01' or 'sub-01' and return 'sub-01' (BIDS style)."""
+        if identifier is None:
+            raise ValueError(f"{id_type} identifier is required")
+        s = str(identifier)
+        if s.startswith(f"{id_type}-"):
+            return s
+        # accept plain numbers/strings and pad session if needed
+        return f"{id_type}-{s}"
+
     def validate_id(self, identifier, id_type):
-        """BIDS-compliant ID validation"""
-        if not re.match(rf"^{id_type}-\d+$", identifier):
-            raise ValueError(f"Invalid {id_type} format: {identifier}. Expected format: {id_type}-<number>")
-        return identifier
+        """Backward-compatible alias: return normalized BIDS id."""
+        return self._normalize_id(identifier, id_type)
     
     def get_subject_session_path(self, subject_id, session_id):
         """Base path for subject/session"""
-        sub = self.validate_id(subject_id, "sub")
-        ses = self.validate_id(session_id, "ses")
+        sub = self._normalize_id(subject_id, "sub")
+        ses = self._normalize_id(session_id, "ses")
         return self.raw_data_dir / sub / ses
     
     def get_raw_eeg_path(self, subject_id, session_id, task_id, run_id=None):
         """Raw EEG data path following BIDS"""
         base_path = self.get_subject_session_path(subject_id, session_id)
-        filename = f"{subject_id}_{session_id}_task-{task_id}"
+        sub = self._normalize_id(subject_id, "sub")
+        ses = self._normalize_id(session_id, "ses")
+        filename = f"{sub}_{ses}_task-{task_id}"
         if run_id:
             filename += f"_run-{run_id}"
         filename += "_eeg.fif"
@@ -45,8 +56,8 @@ class ProjectPaths:
         
     def get_derivative_path(self, subject_id, session_id, task_id=None, run_id=None, stage=None):
         """Processed data path following BIDS derivatives"""
-        sub = f'sub-{subject_id}'    
-        ses = f'ses-{session_id}'
+        sub = self._normalize_id(subject_id, 'sub')
+        ses = self._normalize_id(session_id, 'ses')
         filename = f"{sub}_{ses}"
         if task_id:
             filename += f"_task-{task_id}"
@@ -62,8 +73,8 @@ class ProjectPaths:
         
     def get_split_task_path(self, subject_id, session_id, task_id=None, run_id=None):
         """Processed data path following BIDS derivatives"""
-        sub = f'sub-{subject_id}'    
-        ses = f'ses-{session_id}'
+        sub = self._normalize_id(subject_id, 'sub')
+        ses = self._normalize_id(session_id, 'ses')
         filename = f"{sub}_{ses}"
         if task_id:
             filename += f"_task-{task_id}"
@@ -77,8 +88,8 @@ class ProjectPaths:
         
     def get_report_path(self, report_type, subject_id, session_id, task_id=None, run_id=None, name=None):
         """Standardized report paths"""
-        sub = self.validate_id(subject_id, "sub")
-        ses = self.validate_id(session_id, "ses")
+        sub = self._normalize_id(subject_id, "sub")
+        ses = self._normalize_id(session_id, "ses")
         path = self.reports_dir / report_type / sub / ses
         
         if task_id:
@@ -104,8 +115,8 @@ class ProjectPaths:
         import logging
         logging.warning("get_auto_reject_log_path is deprecated - AutoReject now uses annotations instead of log files")
         
-        sub = f'sub-{subject_id}'    
-        ses = f'ses-{session_id}'
+        sub = self._normalize_id(subject_id, 'sub')
+        ses = self._normalize_id(session_id, 'ses')
         
         # Create a basic path for compatibility
         path = self.processed_dir / sub / ses
@@ -165,7 +176,9 @@ class ProjectPaths:
         
     def get_ica_report_dir(self, subject_id, session_id, task_id=None, run_id=None):
         """Report directory for ICA results"""
-        path = self.reports_dir / "ica" / subject_id / session_id
+        sub = self._normalize_id(subject_id, 'sub')
+        ses = self._normalize_id(session_id, 'ses')
+        path = self.reports_dir / "ica" / sub / ses
         
         if task_id:
             path = path / f"task-{task_id}"

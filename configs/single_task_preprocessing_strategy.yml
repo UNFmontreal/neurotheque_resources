@@ -1,6 +1,6 @@
 
 directory:
-  root: "e:/Yann/neurotheque_resources/"
+  root: "./"
   raw_data_dir: "data/pilot_data/"
   processed_dir: "data/processed"
   reports_dir: "reports"

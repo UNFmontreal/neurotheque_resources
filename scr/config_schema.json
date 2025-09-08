@@ -27,7 +27,7 @@
           "description": "Directory for derivatives relative to root"
         }
       },
-      "required": ["root", "raw_data_dir", "processed_dir", "reports_dir"]
+      "required": ["root", "raw_data_dir", "processed_dir", "reports_dir", "derivatives_dir"]
     },
     "pipeline_mode": {
       "type": "string",
@@ -73,5 +73,5 @@
       "required": ["steps"]
     }
   },
-  "required": ["directory", "pipeline"]
-} 
+  "required": ["directory", "pipeline", "default_subject", "default_session", "default_run"]
+}

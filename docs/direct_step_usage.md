@@ -10,7 +10,7 @@ This guide shows how to directly call individual steps on your loaded MNE data, 
 2. [Common Pattern](#common-pattern)
 3. [Examples for Each Step](#examples-for-each-step)
    - [LoadData](#loaddata)
-   - [Reference](#reference)
+   - [PrepChannelsStep](#prepchannelsstep)
    - [FilterStep](#filterstep)
    - [AutoRejectStep](#autorejectstep)
    - [ICAStep](#icastep)
@@ -27,6 +27,41 @@ Each step in the Neurotheque pipeline follows a consistent pattern:
 3. Get back the processed data
 
 This allows you to use any step directly with your MNE data objects, without needing to run the full pipeline.
+
+## Quick Start (JSON)
+
+Prefer JSON configs for full pipeline runs. Minimal example and command:
+
+```json
+{
+  "auto_save": true,
+  "default_subject": "01",
+  "default_session": "001",
+  "default_run": "01",
+  "directory": {
+    "root": ".",
+    "raw_data_dir": "data/pilot_data/tasks",
+    "processed_dir": "data/processed",
+    "reports_dir": "reports",
+    "derivatives_dir": "derivatives"
+  },
+  "file_path_pattern": "sub-01_ses-001_task-gng_image_run-01_raw.fif",
+  "pipeline": {
+    "steps": [
+      {"name": "LoadData"},
+      {"name": "FilterStep", "params": {"l_freq": 1.0, "h_freq": 40.0, "notch_freqs": [50, 60]}},
+      {"name": "AutoRejectStep", "params": {"mode": "fit"}},
+      {"name": "SaveCheckpoint"}
+    ]
+  }
+}
+```
+
+Run it:
+
+```bash
+python -m scr.pipeline --config configs/gonogo_minimal_pipeline.json
+```
 
 ## Common Pattern
 
@@ -68,21 +103,18 @@ load_step = LoadData(load_params)
 raw_data = load_step.run(None)  # Input is None for LoadData
 ```
 
-### Reference
+### PrepChannelsStep
 
-Apply a reference to your data:
+Standardize channels and optionally re-reference (recommended place to set reference):
 
 ```python
-from scr.steps.reference import ReferenceStep
+from scr.steps.prepchannels import PrepChannelsStep
 
-# Configure parameters - choose your reference type
-ref_params = {
-    "reference": "average",  # Options: 'average', specific channel(s), or None
-}
-
-# Initialize and run the step
-ref_step = ReferenceStep(ref_params)
-referenced_data = ref_step.run(raw_data)
+prep = PrepChannelsStep({
+    "on_missing": "ignore",
+    "reference": {"method": "average", "projection": False}
+})
+prepped = prep.run(raw_data)
 ```
 
 ### FilterStep
@@ -136,7 +168,8 @@ Apply ICA for artifact removal. You can use either the combined `ICAStep` or the
 #### Option 1: Using separate extraction and labeling steps
 
 ```python
-from scr.steps.ica import ICAExtractionStep, ICALabelingStep
+from scr.steps.ica_extraction import ICAExtractionStep
+from scr.steps.ica_labeling import ICALabelingStep
 from pathlib import Path
 
 # MockPaths helper (only needed for steps that save outputs)
@@ -243,10 +276,7 @@ Save your processed data to a file:
 from scr.steps.save import SaveData
 
 # Configure parameters
-save_params = {
-    "output_file": "./output/processed_data.fif",
-    "overwrite": True
-}
+save_params = {"output_path": "./output/processed_data.fif", "overwrite": True}
 
 # Initialize and run the step
 save_step = SaveData(save_params)

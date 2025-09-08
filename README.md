@@ -91,7 +91,7 @@ This repository is designed for both single-subject and multi-subject pipelines,
 2. **Use a Strategy Script**
     ```python
     # Example: Using the finger tapping strategy
-    from src.strategies.finger_tapping_strategy import run_finger_tapping_pipeline
+    from scr.strategies.finger_tapping_strategy import run_finger_tapping_pipeline
 
     input_path = "data/raw/sub-01_ses-001_eeg.edf"
     output_path = "data/processed/sub-01_ses-001_preprocessed.fif"
@@ -161,6 +161,16 @@ print(f"Created {len(epochs)} clean epochs")
 For detailed examples of direct step usage, see:
 - [Direct Step Usage Guide](docs/direct_step_usage.md)
   (examples directory forthcoming)
+
+---
+## Quick Start for Students
+
+- Minimal config: `configs/gonogo_minimal_pipeline.json` (DSI‑24 → Go/NoGo).
+- Run: `python -m scr.pipeline --config configs/gonogo_minimal_pipeline.json`.
+- Outputs: processed FIF and checkpoints under `data/processed/sub-<id>/ses-<id>/`, and reports under `reports/` as defined by `ProjectPaths` and your config `directory`.
+
+Notes:
+- The runner passes `subject_id/session_id/task_id/run_id` and a `paths` helper to each step. In multi‑subject mode these are parsed from filenames; in single‑subject mode they default to the values in your config (`default_subject`, `default_session`, `default_run`).
 
 ## Testing
 

@@ -4,7 +4,7 @@ pipeline:
   steps:
     - name: LoadData
       params:
-        file_path: "../data/pilot_data/GoNoGo.fif"
+        input_file: "../data/pilot_data/GoNoGo.fif"
 
     - name: FilterStep
       params:

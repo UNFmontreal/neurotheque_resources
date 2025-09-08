@@ -1,4 +1,4 @@
-# File: eeg_pipeline/src/steps/__init__.py
+# File: scr/steps/__init__.py
 """
 Initialization file for the steps package.
 
@@ -21,6 +21,7 @@ from .autoreject import AutoRejectStep
 from .save import SaveData
 from .save_checkpoint import SaveCheckpoint
 from .auto_save import AutoSave
+from .synthetic import SyntheticRawStep
 
 # If you have additional steps:
 from .prepchannels import PrepChannelsStep
@@ -28,6 +29,7 @@ from .prepchannels import PrepChannelsStep
 # etc...    
 from .splittasks_dynamic import SplitTasksStep
 from .epoching import EpochingStep
+from .triggers import TriggerParsingStep
 # If you have specialized steps for analysis:
 try:
     from .triggers_gonogo import GoNoGoTriggerStep
@@ -50,6 +52,8 @@ STEP_REGISTRY.update({
     "SplitTasksStep": SplitTasksStep,
     "AutoSave": AutoSave,
     "EpochingStep": EpochingStep,
+    "TriggerParsingStep": TriggerParsingStep,
+    "SyntheticRawStep": SyntheticRawStep,
     # If you have them:
     "GoNoGoTriggerStep": GoNoGoTriggerStep,
     "GoNoGoEpochingStep": GoNoGoEpochingStep,

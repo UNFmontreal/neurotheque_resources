@@ -14,7 +14,7 @@ auto_save: true
 
 # Directory structure (using absolute path like in single_task file)
 directory:
-  root: "e:/Yann/neurotheque_resources/"
+  root: "./"
   raw_data_dir: "data/pilot_data/"
   processed_dir: "data/processed"
   reports_dir: "reports"
@@ -71,7 +71,7 @@ pipeline:
         buffer_pre: 0.5  # Add 0.5s buffer before task start (set to 0 for exact start)
         buffer_post: 0.5  # Add 0.5s buffer after task end (set to 0 for exact end)
         add_annotations: False  # Add annotations for task segments and events
-        returns_epochs: True  # Return raw data instead of epochs
+        returns_epochs: True  # Return epochs instead of raw
         
     # First AutoReject step to identify bad epochs (but not remove them yet)
     - name: "AutoRejectStep"
