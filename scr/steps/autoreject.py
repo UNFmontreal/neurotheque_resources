@@ -10,8 +10,6 @@ import pickle
 import matplotlib.pyplot as plt
 import numpy as np
 import matplotlib
-# Don't force the Agg backend, we'll manage it dynamically based on interactive parameter
-# matplotlib.use('Agg')  # Use non-interactive backend
 
 class AutoRejectStep(BaseStep):
     """
@@ -85,19 +83,18 @@ class AutoRejectStep(BaseStep):
         model_filename = self.params.get("model_filename", None)
         
         # Setup for interactive plotting if requested
-        original_backend = None
-        if interactive:
-            import matplotlib
+        if not interactive:
+            try:
+                matplotlib.use('Agg', force=True)
+            except Exception:
+                pass
+            original_backend = None
+        else:
             original_backend = matplotlib.get_backend()
             try:
-                # Try to switch to TkAgg for interactive plots
-                if original_backend != 'TkAgg' and original_backend != 'Qt5Agg' and original_backend != 'WXAgg':
-                    logging.info(f"[AutoRejectStep] Switching matplotlib backend from {original_backend} to TkAgg for interactive plotting")
-                    matplotlib.use('TkAgg')
-                    plt.ion()  # Turn on interactive mode
-            except Exception as e:
-                logging.warning(f"[AutoRejectStep] Could not switch to interactive backend: {e}")
-                logging.warning("[AutoRejectStep] Interactive plots may not work properly")
+                plt.ion()
+            except Exception:
+                logging.warning("[AutoRejectStep] Interactive backend not available; running headless.")
         
         # Check if data is already epoched - be more flexible with the check
         if isinstance(data, mne.Epochs) or str(type(data).__name__) == 'EpochsFIF' or hasattr(data, 'epochs'):

@@ -1,49 +1,23 @@
 # File: scr/steps/ica_labeling.py
 
 import logging
-import mne
 import os
+import sys
 import numpy as np
 import matplotlib.pyplot as plt
 from scipy import signal
+import mne
+
 from .base import BaseStep
 from ..utils.mne_utils import clean_mne_object
-import sys
-import subprocess
 
 
-def _check_install_dependencies():
-    """Check for dependencies needed for advanced ICA visualization and try to install if missing."""
-    missing_deps = []
-    
-    # Check for mne-icalabel
+def _optional_dep_available(modname: str) -> bool:
     try:
-        import mne_icalabel
-    except ImportError:
-        missing_deps.append("mne-icalabel")
-        
-    # Check for statsmodels
-    try:
-        import statsmodels
-    except ImportError:
-        missing_deps.append("statsmodels")
-    
-    if missing_deps:
-        try:
-            logging.info(f"[ICALabelingStep] Installing missing dependencies: {', '.join(missing_deps)}")
-            subprocess.check_call([sys.executable, "-m", "pip", "install", "--user"] + missing_deps)
-            logging.info("[ICALabelingStep] Successfully installed dependencies")
-            # Re-import to verify availability.
-            for dep in missing_deps:
-                try:
-                    __import__(dep.replace("-", "_"))
-                    logging.info(f"[ICALabelingStep] {dep} is now available")
-                except ImportError:
-                    logging.warning(f"[ICALabelingStep] Failed to import {dep} even after installation")
-        except Exception as e:
-            logging.warning(f"[ICALabelingStep] Failed to install missing dependencies: {e}")
-            logging.warning("[ICALabelingStep] Some advanced ICA visualizations may not be available")
-            logging.warning(f"[ICALabelingStep] To manually install, run: pip install {' '.join(missing_deps)}")
+        __import__(modname)
+        return True
+    except Exception:
+        return False
 
 
 def _open_folder(path):
@@ -90,7 +64,6 @@ class ICALabelingStep(BaseStep):
     
     def run(self, data):
         """Run ICA labeling on the input data with pre-computed ICA."""
-        _check_install_dependencies()
         
         if data is None:
             raise ValueError("[ICALabelingStep] No data provided.")
@@ -115,9 +88,10 @@ class ICALabelingStep(BaseStep):
             "eog_ch_names": ["Fp1", "Fp2"],
             "ecg_channel": None,
             "manual_selection": True,
+            "mode": "auto",  # 'auto' | 'interactive'
             "plot_labeled": True,
             "plot_before_after": True,
-            "interactive": True,
+            "interactive": False,
             "plot_dir": None,
             "reconstruct": True,
             "auto_exclude": False,
@@ -133,33 +107,13 @@ class ICALabelingStep(BaseStep):
         # Initialize figure storage.
         self.figures = []
         
-        # Configure matplotlib backend.
+        # Configure matplotlib backend: default to non-interactive/headless
         import matplotlib
-        original_backend = matplotlib.get_backend()
-        if not params["interactive"] and 'ipykernel' in sys.modules:
+        if not params["interactive"]:
             try:
-                logging.info("[ICALabelingStep] Jupyter environment detected, using inline backend")
-                matplotlib.use('inline')
-            except Exception as e:
-                logging.warning(f"[ICALabelingStep] Could not switch to inline backend: {e}")
-        elif params["interactive"]:
-            try:
-                if original_backend not in ['TkAgg', 'Qt5Agg', 'WXAgg']:
-                    for backend in ['TkAgg', 'Qt5Agg', 'Qt4Agg', 'WXAgg', 'MacOSX', 'Agg']:
-                        try:
-                            matplotlib.use(backend, force=True)
-                            print(f"[ICALabelingStep] Switched matplotlib backend to {backend} for interactive plotting")
-                            break
-                        except Exception:
-                            continue
-                    if matplotlib.get_backend() == 'Agg':
-                        print("[ICALabelingStep] WARNING: Using non-interactive Agg backend")
-                        print("[ICALabelingStep] Plots will be saved to disk but not displayed")
-                    else:
-                        plt.ion()
-                    print(f"[ICALabelingStep] Using matplotlib backend: {matplotlib.get_backend()}")
-            except Exception as e:
-                logging.warning(f"[ICALabelingStep] Could not switch to interactive backend: {e}")
+                matplotlib.use("Agg", force=True)
+            except Exception:
+                pass
         
         # Retrieve ICA.
         if 'temp' in data.info and "ica" in data.info["temp"]:
@@ -192,9 +146,13 @@ class ICALabelingStep(BaseStep):
         labeled_components = {}
         all_artifacts = set()
         
-        # Method 1: ICLabel.
+        # Method 1: ICLabel (if available)
         if "iclabel" in params["methods"]:
-            ic_labels = self._label_with_iclabel(ica, data, params)
+            if not _optional_dep_available("mne_icalabel"):
+                logging.warning("[ICALabelingStep] mne-icalabel not installed; skipping ICLabel. Install mne-icalabel to enable.")
+                ic_labels = None
+            else:
+                ic_labels = self._label_with_iclabel(ica, data, params)
             if ic_labels:
                 labeled_components["iclabel"] = ic_labels
                 thresholds_ic = params["thresholds"]["iclabel"]
@@ -233,7 +191,8 @@ class ICALabelingStep(BaseStep):
         
         # Manual selection.
         final_exclude = set()
-        if params["manual_selection"] and params["interactive"]:
+        mode = params.get("mode", "auto")
+        if params["manual_selection"] and params["interactive"] and mode == "interactive":
             print("\n[ICALabelingStep] Components identified as artifacts:")
             if "iclabel" in labeled_components:
                 print("  ICLabel:")
@@ -262,7 +221,7 @@ class ICALabelingStep(BaseStep):
             else:
                 logging.info("[ICALabelingStep] Using automatically identified artifact components")
                 final_exclude = all_artifacts
-        elif params["auto_exclude"]:
+        elif params["auto_exclude"] or mode == "auto":
             final_exclude = all_artifacts
             logging.info(f"[ICALabelingStep] Automatically excluding components: {sorted(list(final_exclude))}")
         else:
@@ -277,8 +236,7 @@ class ICALabelingStep(BaseStep):
                 ba_figs = self._plot_before_after(data, data_clean, ica, plot_dir, params)
                 if ba_figs:
                     self.figures.extend(ba_figs)
-            if params.get("open_plot_dir", True):
-                _open_folder(plot_dir)
+            # Do not auto-open folders in headless/server mode
             if params.get("save_data", False):
                 try:
                     if "output_file" in params:

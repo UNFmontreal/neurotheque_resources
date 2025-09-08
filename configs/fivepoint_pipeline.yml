@@ -7,7 +7,7 @@ directory:
   processed_dir: data/processed
   raw_data_dir: data/pilot_data/
   reports_dir: reports/fivepoint
-  root: d:/Yann/neurotheque_resources/
+  root: .
 file_path_pattern: sub-01_ses-001_task-5pt_run-01_raw.edf
 pipeline:
   steps:

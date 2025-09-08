@@ -1,5 +1,3 @@
-# File: eeg_pipeline/src/steps/epoching_gonogo.py
-
 import mne
 from .base import BaseStep
 
@@ -18,10 +16,10 @@ class GoNoGoEpochingStep(BaseStep):
             raise ValueError("No 'parsed_events' found. Run triggers step first?")
 
         events = data.info['parsed_events']
-        event_id = {
+        event_id = self.params.get("event_id", {
             'Go_Correct': 101,
             'NoGo_Correct': 201
-        }
+        })
         tmin = self.params.get("tmin", -0.2)
         tmax = self.params.get("tmax", 0.8)
         baseline = self.params.get("baseline", (None, 0))

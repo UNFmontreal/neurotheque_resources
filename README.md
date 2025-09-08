@@ -43,15 +43,15 @@ This repository is designed for both single-subject and multi-subject pipelines,
   - **preprocessing/** – Notebooks focusing on data cleaning (filtering, ICA, etc.).  
   - **analysis/** – Notebooks showing advanced analysis tasks (ERP, ROI-based metrics, time–frequency transforms).
 
-- **src/**
-  - **pipeline.py** – The main pipeline driver, reading YAML configs or Python dicts to run each pipeline step in sequence.
-  - **steps/** – A suite of modular processing steps (e.g., `LoadData`, `FilterStep`, `AutoRejectStep`, `ICAStep`, `SplitTasksStep`, `TriggerParsingStep`) that can be combined in various orders.
-  - **strategies/** – Specialized scripts/pipelines for different paradigms (e.g., finger tapping, mental imagery).
-  - **utilities/** – Helper scripts like `combine_py_files.py` (for merging .py files) or `export_repo_structure.py` (for generating directory trees).
+- **scr/**
+  - `pipeline.py` – The main pipeline driver and CLI (supports JSON or YAML configs with schema validation).
+  - `steps/` – Modular processing steps (e.g., `LoadData`, `FilterStep`, `AutoRejectStep`, `ICAStep`, `SplitTasksStep`, `TriggerParsingStep`).
+  - `strategies/` – Strategy examples for different paradigms (e.g., finger tapping, mental imagery).
+  - `utils/` – Helper utilities for referencing, MNE cleaning, spectra, etc.
 
-- **doc/** – Additional documentation, user guides, or methodology reports.
+- **docs/** – Additional documentation, user guides, or methodology reports.
 
-- **configs/** – YAML files detailing pipeline configurations (e.g., `pilot_preprocessing_strategy.yml`, `gonogo_analysis.yml`, etc.).
+- **configs/** – JSON/YAML pipeline configs (e.g., `gonogo_minimal_pipeline.json` / `.yml`). JSON is the primary format; YAML remains supported.
 
 - **tests/** – Comprehensive test suite for all components of the pipeline.
   - **unit/** – Tests for individual steps and utility functions.
@@ -70,15 +70,23 @@ This repository is designed for both single-subject and multi-subject pipelines,
     ```
 2. **Install dependencies**:
     ```bash
-    pip install -r requirements.txt
+    pip install -r requirements.txt           # runtime deps
+    # optional: dev tools
+    pip install -r requirements-dev.txt       # adds pytest, black, flake8, etc.
     ```
 ## Usage Examples
 
-1. **Run a Pipeline with a YAML Configuration**
+1. **Run a Pipeline (JSON or YAML)**
     ```bash
-    python src/pipeline.py --config configs/pilot_preprocessing_strategy.yml
+    # JSON (preferred)
+    python -m scr.pipeline --config configs/gonogo_minimal_pipeline.json
+
+    # YAML (backward compatible)
+    python -m scr.pipeline --config configs/pilot_preprocessing_strategy.yml
     ```
-    This loads the steps specified in the config (e.g. `LoadData`, `FilterStep`, `AutoRejectStep`, etc.) and applies them to your EEG data.
+    Notes:
+    - The CLI auto-detects JSON vs YAML by extension and validates against `scr/config_schema.json`.
+    - Use `--no-validate` to skip schema checks if iterating quickly.
 
 2. **Use a Strategy Script**
     ```python
@@ -152,7 +160,7 @@ print(f"Created {len(epochs)} clean epochs")
 
 For detailed examples of direct step usage, see:
 - [Direct Step Usage Guide](docs/direct_step_usage.md)
-- [Example Script](example_direct_step_usage.py)
+  (examples directory forthcoming)
 
 ## Testing
 
@@ -168,23 +176,16 @@ pip install -r requirements-dev.txt
 
 ### Running Tests
 
-The test runner script provides several options:
+Use pytest directly or the bundled test runner:
 
 ```bash
-# Run all tests
-python run_tests.py
+# Run all tests (pytest)
+pytest -q
 
-# Run only unit tests
-python run_tests.py --unit
-
-# Run only integration tests
-python run_tests.py --integration
-
-# Run tests with coverage reporting
-python run_tests.py --coverage
-
-# Generate HTML coverage report
-python run_tests.py --html
+# Or use the project test runner
+python tests/run_tests.py               # all
+python tests/run_tests.py --unit        # unit only
+python tests/run_tests.py --integration # integration only
 ```
 
 ### Test Documentation

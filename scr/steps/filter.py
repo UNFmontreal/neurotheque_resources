@@ -42,10 +42,14 @@ class FilterStep(BaseStep):
         l_freq = self.params.get("l_freq", 1.0)
         h_freq = self.params.get("h_freq", 40.0)
         notch_freqs = self.params.get("notch_freqs", [])
+        fir_design = self.params.get("fir_design", "firwin")
 
-        data.filter(l_freq=l_freq, h_freq=h_freq, fir_design="firwin")
+        if l_freq is not None and h_freq is not None and l_freq >= h_freq:
+            raise ValueError(f"[FilterStep] l_freq ({l_freq}) must be < h_freq ({h_freq}).")
+
+        data.filter(l_freq=l_freq, h_freq=h_freq, fir_design=fir_design)
 
         if notch_freqs:
-            data.notch_filter(freqs=notch_freqs, fir_design="firwin")
+            data.notch_filter(freqs=notch_freqs, fir_design=fir_design)
 
         return data

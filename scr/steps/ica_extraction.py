@@ -1,84 +1,17 @@
 # File: scr/steps/ica_extraction.py
 
 import logging
-import mne
-from mne.preprocessing import ICA
-from pathlib import Path
-from .base import BaseStep
 import os
-import numpy as np
-import matplotlib.pyplot as plt
-from scipy import signal
 import sys
+from pathlib import Path
 
-# Set environment variable to use software rendering if OpenGL_accelerate is not available
-os.environ['MNE_3D_OPTION_ANTIALIAS'] = 'false'
-os.environ['PYOPENGL_PLATFORM'] = 'osmesa'  # Use software rendering
+import matplotlib.pyplot as plt
+import mne
+import numpy as np
+from mne.preprocessing import ICA
+from scipy import signal
 
-# Avoid Qt errors by using Agg backend if there are problems
-try:
-    # First try to import Qt and check version
-    from PyQt5.QtCore import QT_VERSION_STR
-    logging.info(f"[ICAExtractionStep] Qt version: {QT_VERSION_STR}")
-except ImportError:
-    logging.warning("[ICAExtractionStep] PyQt5 not found, defaulting to Agg backend")
-    import matplotlib
-    matplotlib.use('Agg')
-except Exception as e:
-    logging.warning(f"[ICAExtractionStep] Qt error: {e}, defaulting to Agg backend")
-    import matplotlib
-    matplotlib.use('Agg')
-
-# Suppress OpenGL-related warnings
-import warnings
-warnings.filterwarnings("ignore", message="No OpenGL_accelerate module loaded")
-
-# Helper function to check and install dependencies
-def _check_install_dependencies():
-    """Check for dependencies needed for advanced ICA visualization and try to install if missing."""
-    missing_deps = []
-    
-    # Check for mne-icalabel
-    try:
-        import mne_icalabel
-    except ImportError:
-        missing_deps.append("mne-icalabel")
-        
-    # Check for statsmodels
-    try:
-        import statsmodels
-    except ImportError:
-        missing_deps.append("statsmodels")
-    
-    # Try to install missing dependencies
-    if missing_deps:
-        try:
-            import subprocess
-            import sys
-            
-            logging.info(f"[ICAExtractionStep] Installing missing dependencies: {', '.join(missing_deps)}")
-            subprocess.check_call([sys.executable, "-m", "pip", "install", "--user"] + missing_deps)
-            logging.info("[ICAExtractionStep] Successfully installed dependencies")
-            
-            # Re-import to ensure they're now available
-            if "mne-icalabel" in missing_deps:
-                try:
-                    import mne_icalabel
-                    logging.info("[ICAExtractionStep] mne-icalabel is now available")
-                except ImportError:
-                    logging.warning("[ICAExtractionStep] Failed to import mne-icalabel even after installation")
-            
-            if "statsmodels" in missing_deps:
-                try:
-                    import statsmodels
-                    logging.info("[ICAExtractionStep] statsmodels is now available")
-                except ImportError:
-                    logging.warning("[ICAExtractionStep] Failed to import statsmodels even after installation")
-                    
-        except Exception as e:
-            logging.warning(f"[ICAExtractionStep] Failed to install missing dependencies: {e}")
-            logging.warning("[ICAExtractionStep] Some advanced ICA visualizations may not be available")
-            logging.warning(f"[ICAExtractionStep] To manually install, run: pip install {' '.join(missing_deps)}")
+from .base import BaseStep
 
 class ICAExtractionStep(BaseStep):
     """
@@ -117,11 +50,13 @@ class ICAExtractionStep(BaseStep):
     
     def run(self, data):
         """Run ICA extraction on the input data."""
-        # Check for dependencies needed for advanced visualizations
-        _check_install_dependencies()
-        
-        # Import matplotlib for backend configuration
+        # Configure matplotlib backend (default headless unless interactive)
         import matplotlib
+        if not self.params.get("interactive", False):
+            try:
+                matplotlib.use('Agg', force=True)
+            except Exception:
+                pass
         
         if data is None:
             raise ValueError("[ICAExtractionStep] No data provided for ICA.")
@@ -162,37 +97,11 @@ class ICAExtractionStep(BaseStep):
         # Configure matplotlib backend for plotting
         # --------------------------
         original_backend = matplotlib.get_backend()
-        # For Jupyter notebooks, it's better to use inline backend
-        if not params["interactive"] and 'ipykernel' in sys.modules:
+        if params["interactive"]:
             try:
-                logging.info("[ICAExtractionStep] Jupyter environment detected, using inline backend")
-                matplotlib.use('inline')
-            except Exception as e:
-                logging.warning(f"[ICAExtractionStep] Could not switch to inline backend: {e}")
-        # Check if we need to switch backends for interactive plotting
-        elif params["interactive"]:
-            try:
-                # Try to switch to TkAgg for interactive plots
-                if original_backend != 'TkAgg' and original_backend != 'Qt5Agg' and original_backend != 'WXAgg':
-                    logging.info(f"[ICAExtractionStep] Switching matplotlib backend from {original_backend} to TkAgg for interactive plotting")
-                    try:
-                        matplotlib.use('TkAgg')
-                    except Exception:
-                        # If TkAgg fails, try Qt5Agg
-                        try:
-                            logging.info("[ICAExtractionStep] TkAgg failed, trying Qt5Agg")
-                            matplotlib.use('Qt5Agg')
-                        except Exception:
-                            # If Qt5Agg fails, fall back to Agg
-                            logging.warning("[ICAExtractionStep] All interactive backends failed, using Agg")
-                            matplotlib.use('Agg')
-                            params["interactive"] = False  # Disable interactive mode
-                    
-                    if params["interactive"]:
-                        plt.ion()  # Turn on interactive mode
-            except Exception as e:
-                logging.warning(f"[ICAExtractionStep] Could not switch to interactive backend: {e}")
-                logging.warning("[ICAExtractionStep] Interactive plots may not work properly")
+                plt.ion()
+            except Exception:
+                logging.warning("[ICAExtractionStep] Interactive backend not available; continuing headless.")
                 
         # --------------------------
         # 2) Instantiate ICA

@@ -1072,8 +1072,8 @@ def main():
         RTs = RTs[keep]
 
     # Epoching
-    tmin_stim, tmax_stim = -0.6, 3.0
-    tmin_resp, tmax_resp = -1.8, 0.8
+    tmin_stim, tmax_stim = -1, 2.0
+    tmin_resp, tmax_resp = -1, 2.0
     
     if raw is not None and do_response_analysis:
         # Create both stimulus and response locked epochs from raw
@@ -1187,13 +1187,18 @@ def main():
             if not picks_joint_stim or len(picks_joint_stim) < 2:
                 picks_joint_stim = None
             fig_joint_stim = ev_stim.plot_joint(picks=picks_joint_stim, show=False)
-            fig_joint_stim.savefig(fig_dir / 'erp_stim_joint.png', dpi=150)
+            
+            fig_joint_stim_2=ev_stim.plot(picks=picks_joint_stim,show=False, spatial_colors=True,titles={'eeg':'Stim-Locked ERP'})
+            fig_joint_stim.savefig(fig_dir / 'erp_stim_joint.png', dpi=300)
+            fig_joint_stim_2.savefig(fig_dir / 'erp_stim_joint_2.png', dpi=300)
         if ev_resp is not None and has_enough_channels(ev_resp.info, 'eeg', min_count=2):
             picks_joint_resp = safe_picks(ev_resp.info, roi_cz)
             if not picks_joint_resp or len(picks_joint_resp) < 2:
                 picks_joint_resp = None
             fig_joint_resp = ev_resp.plot_joint(picks=picks_joint_resp, show=False)
-            fig_joint_resp.savefig(fig_dir / 'erp_resp_joint.png', dpi=150)
+            fig_joint_resp_2=ev_resp.plot(picks=picks_joint_resp, show=False, spatial_colors=True,titles={'eeg':'Resp-Locked ERP'})
+            fig_joint_resp_2.savefig(fig_dir / 'erp_resp_joint_2.png', dpi=300) 
+            fig_joint_resp.savefig(fig_dir / 'erp_resp_joint.png', dpi=300)
         plt.close('all')
     except Exception as e:
         logging.warning(f"Could not generate joint ERP plots: {e}")

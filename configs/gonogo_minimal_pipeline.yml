@@ -7,7 +7,7 @@ directory:
   processed_dir: data/processed
   raw_data_dir: data/pilot_data/tasks
   reports_dir: reports/minimal
-  root: D:/Yann/neurotheque_resources/
+  root: .
 file_path_pattern: sub-01_ses-001_task-gng_image_run-01_raw.fif
 pipeline:
   steps:
