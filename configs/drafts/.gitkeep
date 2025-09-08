@@ -1,0 +1,1 @@
+This folder contains drafts or non-validated configuration examples. Files here may not conform to `scr/config_schema.json` and are not used by tests/CI.

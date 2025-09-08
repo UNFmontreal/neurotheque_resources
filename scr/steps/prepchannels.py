@@ -1,4 +1,4 @@
-# src/steps/prepchannels.py
+# File: scr/steps/prepchannels.py
 
 import logging
 from mne.channels import make_standard_montage
@@ -11,6 +11,12 @@ class PrepChannelsStep(BaseStep):
     Drops non-EEG channels, renames them, sets channel types & montage.
     Mirrors the notebook's channel preparation logic.
     Can also handle re-referencing as part of channel preparation.
+
+    YAML tip: keys with colons must be quoted. For example, to set ECG type
+    for a channel named "X1:ECG":
+
+      channel_types:
+        "X1:ECG": ecg
     """
     def run(self, data):
         if data is None:

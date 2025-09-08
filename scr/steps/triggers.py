@@ -1,4 +1,4 @@
-# src/steps/triggers.py
+# File: scr/steps/triggers.py
 
 import mne
 import numpy as np

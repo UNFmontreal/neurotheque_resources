@@ -50,8 +50,8 @@ Prefer JSON configs for full pipeline runs. Minimal example and command:
     "steps": [
       {"name": "LoadData"},
       {"name": "FilterStep", "params": {"l_freq": 1.0, "h_freq": 40.0, "notch_freqs": [50, 60]}},
-      {"name": "AutoRejectStep", "params": {"mode": "fit"}},
-      {"name": "SaveCheckpoint"}
+      {"name": "EpochingStep", "params": {"task_type": "gng", "trigger_ids": {"go": 1, "nogo": 2, "response": 3}, "returns_epochs": true}},
+      {"name": "SaveCheckpoint", "params": {"checkpoint_key": "after_epoching"}}
     ]
   }
 }
@@ -62,6 +62,13 @@ Run it:
 ```bash
 python -m scr.pipeline --config configs/gonogo_minimal_pipeline.json
 ```
+
+### Trigger Mapping Cheat‑Sheet
+
+- task_type "5pt": use a single code for all events
+  - trigger_ids: { "trigger_id": 8 }
+- task_type "gng": use separate codes
+  - trigger_ids: { "go": 1, "nogo": 2, "response": 3 }
 
 ## Common Pattern
 

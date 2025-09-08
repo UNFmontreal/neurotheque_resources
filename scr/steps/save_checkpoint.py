@@ -1,4 +1,4 @@
-# src/steps/save_checkpoint.py
+# File: scr/steps/save_checkpoint.py
 import mne
 from pathlib import Path
 from .base import BaseStep

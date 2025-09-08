@@ -43,7 +43,7 @@ docs/_build/
 combined_code.py
 combine_py_files.py
 repo_structure.txt
-tools/dev/
+# tools/dev/ contains small helper scripts kept under version control
 
 # OS/IDE
 .DS_Store

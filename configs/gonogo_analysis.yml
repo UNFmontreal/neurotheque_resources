@@ -1,10 +1,25 @@
-# File: eeg_pipeline/configs/gonogo_analysis.yml
+## Go/No-Go analysis example
+# Optional specialized steps are registered conditionally (see scr/steps/__init__.py).
+# Expected input: a single preprocessed Raw/Epochs file.
+
+auto_save: false
+default_subject: "01"
+default_session: "001"
+default_run: "01"
+directory:
+  root: "."
+  raw_data_dir: "data/pilot_data"
+  processed_dir: "data/processed"
+  reports_dir: "reports/analysis"
+  derivatives_dir: "derivatives"
+
+pipeline_mode: "standard"
 
 pipeline:
   steps:
     - name: LoadData
       params:
-        input_file: "../data/pilot_data/GoNoGo.fif"
+        input_file: "data/processed/sub-01/ses-001/sub-01_ses-001_task-gng_raw.fif"  # adjust as needed
 
     - name: FilterStep
       params:
@@ -23,5 +38,5 @@ pipeline:
 
     - name: SaveData
       params:
-        output_path: "../data/pilot_data/GoNoGo_correct-epo.fif"
+        output_path: "data/processed/sub-01/ses-001/sub-01_ses-001_task-gng_desc-correct-epo.fif"
         overwrite: true

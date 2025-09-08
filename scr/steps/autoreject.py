@@ -1,4 +1,4 @@
-# File: src/steps/autoreject.py
+# File: scr/steps/autoreject.py
 
 import logging
 import mne

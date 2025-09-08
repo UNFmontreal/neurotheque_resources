@@ -3,7 +3,7 @@
 [![License: BSD-3-Clause](https://img.shields.io/badge/License-BSD--3--Clause-blue.svg)](LICENSE)
 [![GitHub stars](https://img.shields.io/github/stars/UNFmontreal/neurotheque_resources.svg)](https://github.com/UNFmontreal/neurotheque_resources/stargazers)
 [![GitHub forks](https://img.shields.io/github/forks/UNFmontreal/neurotheque_resources.svg)](https://github.com/UNFmontreal/neurotheque_resources/network)
-[![Python](https://img.shields.io/badge/Python-3.8%2B-blue.svg)](https://www.python.org/)
+[![Python](https://img.shields.io/badge/Python-3.10%E2%80%933.12-blue.svg)](https://www.python.org/)
 
 <br />
 
@@ -74,6 +74,8 @@ This repository is designed for both single-subject and multi-subject pipelines,
     # optional: dev tools
     pip install -r requirements-dev.txt       # adds pytest, black, flake8, etc.
     ```
+3. **Supported Python**:
+   - We test on Python 3.10–3.12 (recommended with MNE 1.5+).
 ## Usage Examples
 
 1. **Run a Pipeline (JSON or YAML)**
@@ -87,6 +89,7 @@ This repository is designed for both single-subject and multi-subject pipelines,
     Notes:
     - The CLI auto-detects JSON vs YAML by extension and validates against `scr/config_schema.json`.
     - Use `--no-validate` to skip schema checks if iterating quickly.
+    - Use `--dry-run` to print the step plan (and resolved files in multi-file mode) without executing.
 
 2. **Use a Strategy Script**
     ```python
@@ -170,7 +173,17 @@ For detailed examples of direct step usage, see:
 - Outputs: processed FIF and checkpoints under `data/processed/sub-<id>/ses-<id>/`, and reports under `reports/` as defined by `ProjectPaths` and your config `directory`.
 
 Notes:
-- The runner passes `subject_id/session_id/task_id/run_id` and a `paths` helper to each step. In multi‑subject mode these are parsed from filenames; in single‑subject mode they default to the values in your config (`default_subject`, `default_session`, `default_run`).
+- The runner passes `subject_id/session_id/task_id/run_id` and a `paths` helper to each step. In multi‑file mode these are parsed from filenames; in single‑subject mode they default to the values in your config (`default_subject`, `default_session`, `default_run`).
+- AutoSave (enabled by `auto_save: true`) writes checkpoints after each step using the convention `after_<step>`. SaveCheckpoint does the same using the explicit `checkpoint_key`. The resume logic recognizes both patterns.
+
+### Optional Extras
+
+Some examples (e.g., spectral modeling/FOOOF, mixed-effects) require additional packages that are not needed for core preprocessing:
+
+- fooof (spectral parameterization)
+- statsmodels (mixed-effects models)
+
+Install on demand, for example: `pip install fooof statsmodels`.
 
 ## Testing
 

@@ -66,7 +66,95 @@
                 "description": "Parameters for the step"
               }
             },
-            "required": ["name"]
+            "required": ["name"],
+            "allOf": [
+              {
+                "if": {"properties": {"name": {"const": "SaveCheckpoint"}}},
+                "then": {
+                  "properties": {
+                    "params": {
+                      "type": "object",
+                      "properties": {
+                        "checkpoint_key": {"type": "string"},
+                        "overwrite": {"type": ["boolean", "null"]}
+                      },
+                      "required": ["checkpoint_key"]
+                    }
+                  }
+                }
+              },
+              {
+                "if": {"properties": {"name": {"const": "LoadData"}}},
+                "then": {
+                  "properties": {
+                    "params": {
+                      "type": "object",
+                      "properties": {
+                        "input_file": {"type": ["string", "null"]},
+                        "stim_channel": {"type": ["string", "null"]}
+                      },
+                      "additionalProperties": true
+                    }
+                  }
+                }
+              },
+              {
+                "if": {"properties": {"name": {"const": "FilterStep"}}},
+                "then": {
+                  "properties": {
+                    "params": {
+                      "type": "object",
+                      "properties": {
+                        "l_freq": {"type": ["number", "null"]},
+                        "h_freq": {"type": ["number", "null"]},
+                        "notch_freqs": {"type": ["array", "null"], "items": {"type": "number"}}
+                      },
+                      "additionalProperties": true
+                    }
+                  }
+                }
+              },
+              {
+                "if": {"properties": {"name": {"const": "EpochingStep"}}},
+                "then": {
+                  "properties": {
+                    "params": {
+                      "type": "object",
+                      "properties": {
+                        "task_type": {"type": "string", "enum": ["5pt", "gng", "continuous", "fixed", "custom"]},
+                        "trigger_ids": {"type": "object"}
+                      },
+                      "allOf": [
+                        {
+                          "if": {"properties": {"task_type": {"const": "5pt"}}},
+                          "then": {
+                            "properties": {
+                              "trigger_ids": {"type": "object", "properties": {"trigger_id": {"type": "integer"}}, "required": ["trigger_id"]}
+                            }
+                          }
+                        },
+                        {
+                          "if": {"properties": {"task_type": {"const": "gng"}}},
+                          "then": {
+                            "properties": {
+                              "trigger_ids": {
+                                "type": "object",
+                                "properties": {
+                                  "go": {"type": "integer"},
+                                  "nogo": {"type": "integer"},
+                                  "response": {"type": ["integer", "null"]}
+                                },
+                                "required": ["go", "nogo"]
+                              }
+                            }
+                          }
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            ]
           }
         }
       },

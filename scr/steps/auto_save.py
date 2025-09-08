@@ -1,4 +1,4 @@
-# src/steps/auto_save.py
+# File: scr/steps/auto_save.py
 import mne
 from pathlib import Path
 from .base import BaseStep

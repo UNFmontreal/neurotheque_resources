@@ -19,6 +19,11 @@ class LoadData(BaseStep):
       `task_id` is available, constructs a BIDS-like path via `paths.get_raw_eeg_path`.
     - Expands `~` and environment variables in paths and accepts case-insensitive extensions.
 
+    Notes:
+    - In multi-file mode the Pipeline injects `input_file` automatically from the
+      resolved `file_path_pattern` for each subject/session/task/run, so you typically
+      do not need to set `input_file` in the config.
+
     Supported extensions: .edf/.EDF, .fif/.FIF, .fif.gz
     """
 
@@ -47,7 +52,11 @@ class LoadData(BaseStep):
             resolved_path = Path(str(resolved_path) + ".gz")
 
         if not resolved_path.exists():
-            raise FileNotFoundError(f"[LoadData] File not found: {resolved_path}")
+            hint = ""
+            if sub_id and ses_id and paths and task_id:
+                candidate = paths.get_raw_eeg_path(sub_id, ses_id, task_id, run_id)
+                hint = f"\n[LoadData] Candidate BIDS-like path was: {candidate}"
+            raise FileNotFoundError(f"[LoadData] File not found: {resolved_path}{hint}")
 
         ext = resolved_path.suffix.lower()
         stim_channel = self.params.get("stim_channel", "Trigger")

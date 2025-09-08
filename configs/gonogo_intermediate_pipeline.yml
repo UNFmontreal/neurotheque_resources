@@ -38,9 +38,7 @@ debug_mode:
 pipeline:
   steps:
   - name: LoadData
-    params:
-      # This will be set programmatically to load the preprocessed epochs from minimal pipeline
-      input_file: null
+    params: {}
   - name: AutoRejectStep
     params:
       ar_params:
@@ -107,6 +105,6 @@ pipeline:
       save_model: true
   - name: SaveCheckpoint
     params:
-      suffix: intermediate-cleaned-epo
+      checkpoint_key: after_autoreject
       overwrite: true
-pipeline_mode: intermediate
+pipeline_mode: standard

@@ -79,30 +79,41 @@ class Pipeline:
 
     def _resolve_checkpoints(self, steps_def):
         """
-        Attempt to find a valid checkpoint from a 'SaveCheckpoint' step
-        in the pipeline steps (searching from last to first).
-        If found, load that .fif file into self.data, then skip steps
-        up to that point. 
-        (In multi-subject mode, this logic may load only one global checkpoint.)
+        Legacy helper (not used by run()). Kept for backward-compatibility.
+        Looks for a SaveCheckpoint step and attempts to load the configured
+        checkpoint (falls back to the latest matching AutoSave file).
         """
         for i, step in reversed(list(enumerate(steps_def))):
             if step["name"] == "SaveCheckpoint":
-                output_path = self.paths.get_derivative_path(
-                    subject_id=self.default_subject,
-                    session_id=self.default_session,
-                    stage="after_autoreject"
-                )
-                full_path = output_path.resolve()
-                
-                if full_path.exists():
-                    try:
-                        # Load the checkpoint file
-                        self.data = mne.io.read_raw_fif(full_path, preload=True)
-                        logging.info(f"Resuming from checkpoint: {full_path}")
-                        return steps_def[i+1:]  # Return steps after the checkpoint
-                    except Exception as e:
-                        logging.error(f"Error loading checkpoint: {e}")
-        return steps_def  # No checkpoint found or load failed
+                # Prefer the schema-driven key
+                ck = step.get("params", {}).get("checkpoint_key")
+                if not ck:
+                    # Fallback to latest autosave
+                    latest = self._find_latest_checkpoint(self.default_subject, self.default_session)
+                    if latest and latest.exists():
+                        try:
+                            self.data = mne.io.read_raw_fif(latest, preload=True)
+                            logger.info(f"Resuming from checkpoint: {latest}")
+                            return steps_def[i + 1 :]
+                        except Exception as e:
+                            logger.error(f"Error loading checkpoint: {e}")
+                    break
+                else:
+                    # Use named checkpoint
+                    full_path = self.paths.get_checkpoint_path(
+                        subject_id=self.default_subject,
+                        session_id=self.default_session,
+                        checkpoint_name=ck,
+                    ).resolve()
+                    if full_path.exists():
+                        try:
+                            self.data = mne.io.read_raw_fif(full_path, preload=True)
+                            logger.info(f"Resuming from checkpoint: {full_path}")
+                            return steps_def[i + 1 :]
+                        except Exception as e:
+                            logger.error(f"Error loading checkpoint: {e}")
+                    break
+        return steps_def
 
     def run(self):
         """Runs the pipeline for a single subject or multi-subject, depending on config."""
@@ -142,54 +153,58 @@ class Pipeline:
                 # Extract context from filename
                 sub_id, ses_id, task_id, run_id = self._parse_sub_ses(file_path)
                 
-                # Look for the latest checkpoint for this subject
-                latest_ckpt = self._find_latest_checkpoint(sub_id, ses_id, task_id, run_id)
+                # Decide skip index
                 skip_index = None
-                
-                # If we're starting from a specific step, find its index
+                latest_ckpt = None
+
                 if start_from_step:
+                    # Derive purely from step order
                     skip_index = self._find_step_index(steps_def, start_from_step)
                     if skip_index is not None:
-                        # Skip to right before the requested step
-                        skip_index -= 1  # We want to start AT the requested step
-                    logger.info(f"Will start from step {start_from_step} (skipping steps [0..{skip_index}])")
-                else:
-                    logger.warning(f"Requested step '{start_from_step}' not found in pipeline. Starting from beginning.")
-                
-                # Otherwise, use the latest checkpoint if available
-                elif mode != "restart" and latest_ckpt and latest_ckpt.exists():
-                    logger.info(f"Found existing checkpoint => {latest_ckpt}")
-                    # Extract the checkpoint name to determine which steps to skip
-                    parts = latest_ckpt.stem.split('_')
-                    if len(parts) >= 2 and parts[-2] == "after":
-                        step_name = parts[-1]
-                        logger.info(f"Last completed step: {step_name}")
-                        
-                        # Find which step to skip to based on checkpoint name
-                        for i, st in enumerate(steps_def):
-                            if st["name"].lower() == step_name.lower() or \
-                               st["name"].lower() == f"{step_name}step".lower():
-                                skip_index = i
-                                logger.info(f"Will resume after step {st['name']} (index {skip_index})")
-                        break
-                    
-                    # Load the checkpoint if needed
-                    try:
-                        # Only load data if we're skipping steps
-                        if skip_index is not None:
-                            self.data = mne.io.read_raw_fif(latest_ckpt, preload=True)
-                            logger.info("Checkpoint loaded successfully.")
-                    except Exception as e:
-                        logger.error(f"Could not load checkpoint: {e}")
-                        self.data = None
-                        skip_index = None
-                else:
-                    # Starting from scratch
-                    if mode == "restart":
-                        logger.info("Restart mode enabled. Starting from scratch.")
+                        skip_index -= 1  # start at the requested step
+                        logger.info(
+                            f"Will start from step {start_from_step} (skipping [0..{skip_index}])"
+                        )
                     else:
-                        logger.info("No checkpoint found or continuing from start. Starting from scratch.")
-                    self.data = None
+                        logger.warning(
+                            f"Requested step '{start_from_step}' not found. Starting from beginning."
+                        )
+                else:
+                    # Try latest checkpoint in standard/resume modes
+                    if mode != "restart":
+                        latest_ckpt = self._find_latest_checkpoint(sub_id, ses_id, task_id, run_id)
+                        if latest_ckpt and latest_ckpt.exists():
+                            logger.info(f"Found existing checkpoint => {latest_ckpt}")
+                            parts = latest_ckpt.stem.split("_")
+                            step_name = None
+                            if len(parts) >= 2 and parts[-2] == "after":
+                                step_name = parts[-1]
+                            if step_name:
+                                for i, st in enumerate(steps_def):
+                                    nm = st.get("name", "")
+                                    if nm.lower() == step_name.lower() or nm.lower() == f"{step_name}step".lower():
+                                        skip_index = i
+                                        logger.info(
+                                            f"Will resume after step {nm} (index {skip_index})"
+                                        )
+                                        break
+                            try:
+                                if skip_index is not None:
+                                    self.data = mne.io.read_raw_fif(latest_ckpt, preload=True)
+                                    logger.info("Checkpoint loaded successfully.")
+                            except Exception as e:
+                                logger.error(f"Could not load checkpoint: {e}")
+                                self.data = None
+                                skip_index = None
+                    if skip_index is None:
+                        # Starting from scratch
+                        if mode == "restart":
+                            logger.info("Restart mode enabled. Starting from scratch.")
+                        else:
+                            logger.info(
+                                "No checkpoint found or continuing from start. Starting from scratch."
+                            )
+                        self.data = None
                 
                 # Run the steps for this subject, skipping if needed
                 self._run_steps(steps_def, skip_index, sub_id, ses_id, run_id, file_path, task_id)
@@ -229,14 +244,22 @@ class Pipeline:
                 skip_index = self._find_step_index(steps_def, start_from_step)
                 if skip_index is not None:
                     skip_index -= 1  # start at requested step
-                    logger.info(f"Will start from step {start_from_step} (skipping [0..{skip_index}])")
+                    logger.info(
+                        f"Will start from step {start_from_step} (skipping [0..{skip_index}])"
+                    )
+                else:
+                    logger.warning(
+                        f"Requested step '{start_from_step}' not found. Starting from beginning."
+                    )
             else:
                 # Try resuming from latest checkpoint unless in restart mode
                 if mode != "restart":
-                    latest_ckpt = self._find_latest_checkpoint(subject_id, session_id, task_id, run_id)
+                    latest_ckpt = self._find_latest_checkpoint(
+                        subject_id, session_id, task_id, run_id
+                    )
                     if latest_ckpt and latest_ckpt.exists():
                         logger.info(f"Found existing checkpoint => {latest_ckpt}")
-                        parts = latest_ckpt.stem.split('_')
+                        parts = latest_ckpt.stem.split("_")
                         step_name = None
                         if len(parts) >= 2 and parts[-2] == "after":
                             step_name = parts[-1]
@@ -245,7 +268,9 @@ class Pipeline:
                                 nm = st.get("name", "")
                                 if nm.lower() == step_name.lower() or nm.lower() == f"{step_name}step".lower():
                                     skip_index = i
-                                    logger.info(f"Will resume after step {nm} (index {skip_index})")
+                                    logger.info(
+                                        f"Will resume after step {nm} (index {skip_index})"
+                                    )
                                     break
                         try:
                             if skip_index is not None:
@@ -483,6 +508,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--no-validate", action="store_true", help="Disable schema validation")
     parser.add_argument("--verbose", "-v", action="count", default=0, help="Increase verbosity")
     parser.add_argument("--log-file", default="pipeline.log", help="Log file path (under repo root by default)")
+    parser.add_argument("--dry-run", action="store_true", help="Print step plan and exit without executing")
     args = parser.parse_args(argv)
 
     # Setup logging early
@@ -491,7 +517,34 @@ def main(argv: list[str] | None = None) -> int:
 
     try:
         pipe = Pipeline(config_file=args.config, validate_config=not args.no_validate)
-        pipe.run()
+        if args.dry_run:
+            # Preview: list steps and key resolved paths (best-effort)
+            cfg = pipe.config
+            steps_def = cfg.get("pipeline", {}).get("steps", [])
+            print("--- Pipeline Plan (dry run) ---")
+            print(f"Mode: {cfg.get('pipeline_mode', 'standard')}")
+            if "file_path_pattern" in cfg:
+                pattern = cfg["file_path_pattern"]
+                if not os.path.isabs(pattern):
+                    pattern = os.path.join(pipe.paths.raw_data_dir, pattern)
+                files = sorted(glob.glob(pattern))
+                print(f"Files ({len(files)}):")
+                for fp in files[:10]:
+                    print(f"  - {fp}")
+                if len(files) > 10:
+                    print("  ... (truncated)")
+            print("Steps:")
+            for i, st in enumerate(steps_def):
+                nm = st.get("name")
+                extra = ""
+                if nm == "SaveCheckpoint":
+                    ck = st.get("params", {}).get("checkpoint_key", "<missing>")
+                    extra = f" -> checkpoint_key={ck}"
+                print(f"  {i:02d}. {nm}{extra}")
+            print("--- End Plan ---")
+            return 0
+        else:
+            pipe.run()
     except FileNotFoundError as e:
         logger.error(str(e))
         logger.error("Hint: check path spelling and that the file exists.")

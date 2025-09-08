@@ -328,7 +328,7 @@ class TestWorkflowIntegration(unittest.TestCase):
                     {
                         "name": "SaveCheckpoint",
                         "params": {
-                            "stage": "after_filter"
+                            "checkpoint_key": "after_filter"
                         }
                     },
                     {

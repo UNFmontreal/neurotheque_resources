@@ -53,5 +53,6 @@ pipeline:
         save_dir: figures/events # Directory to save figures
   - name: SaveCheckpoint
     params:
+      checkpoint_key: after_epoching
       overwrite: true
 pipeline_mode: standard

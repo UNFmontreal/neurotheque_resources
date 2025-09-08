@@ -1,4 +1,4 @@
-# src/steps/epoching.py
+# File: scr/steps/epoching.py
 
 import mne
 import numpy as np
@@ -11,37 +11,21 @@ import os
 class EpochingStep(BaseStep):
     """
     Flexible epoching step that supports multiple task-specific epoching strategies.
-    
-    This step handles:
-    1. Continuous data extraction between start/end triggers
-    2. Event-related epoching around specific triggers
-    3. Task-specific epoching methods (5-point test, go/no-go, etc.)
-    
-    Parameters:
-    -----------
-    task_type : str
-        Type of task to epoch ('5pt', 'gng', 'continuous', 'custom')
-    
-    trigger_ids : dict
-        Dictionary mapping trigger names to their numeric IDs
-        Example: {'start': 1, 'end': 2, 'onset': 3, 'response': 4}
-    
-    epoch_params : dict
-        Dictionary containing epoching parameters:
-        - tmin: start time in seconds relative to trigger (default: -0.2)
-        - tmax: end time in seconds relative to trigger (default: 1.0)
-        - baseline: baseline correction period (default: (None, 0))
-        - preload: whether to preload data (default: True)
-        - reject_by_annotation: whether to reject epochs with annotations (default: True)
-    
-    extract_continuous : bool
-        If True, extracts continuous data between start/end triggers (default: False)
-    
-    returns_epochs : bool
-        If True, returns Epochs object; if False, returns Raw object with selections (default: True)
-    
-    event_id : dict or None
-        Custom event_id dictionary for MNE Epochs (default: None)
+
+    Handles:
+    - Continuous data extraction between start/end triggers
+    - Event-related epoching around specific triggers
+    - Task-specific epoching methods (5‑point test, Go/No‑Go, etc.)
+
+    Parameters
+    - task_type: '5pt' | 'gng' | 'continuous' | 'fixed' | 'custom'
+      - '5pt' expects trigger_ids: { "trigger_id": <int> } (single code, typically 8)
+      - 'gng' expects trigger_ids: { "go": <int>, "nogo": <int>, ["response": <int>] }
+    - trigger_ids: mapping of names to numeric codes (see above)
+    - epoch_params: { tmin, tmax, baseline, preload, reject_by_annotation }
+    - extract_continuous: bool (default False)
+    - returns_epochs: bool (default True)
+    - event_id: dict or None
     """
     
     def __init__(self, params=None):

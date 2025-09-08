@@ -13,6 +13,8 @@ pipeline_mode: "standard"
 auto_save: false
 
 # Fixed file path pattern with proper relative path
+# Place your EDF files under `raw_data_dir` and use a simple pattern.
+# Tip: run with `--no-validate` while iterating on parameters, then re-enable validation.
 file_path_pattern: "sub-01_ses-001_raw.edf"
 
 pipeline:

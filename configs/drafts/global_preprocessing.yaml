@@ -1,4 +1,5 @@
-# File: eeg_pipeline/configs/global_preprocessing.yml
+# Draft: high-level single-file preprocessing example (not validated by schema)
+# Note: Use this as a starting point; for classroom use prefer validated JSON in configs/.
 
 pipeline:
   steps:
@@ -38,3 +39,4 @@ pipeline:
 
     - name: SplitTasksStep
       params: {}
+

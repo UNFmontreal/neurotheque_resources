@@ -1,4 +1,4 @@
-# src/steps/base.py
+# File: scr/steps/base.py
 
 from abc import ABC, abstractmethod
 

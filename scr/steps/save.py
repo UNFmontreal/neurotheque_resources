@@ -1,4 +1,4 @@
-# File: src/steps/save.py
+# File: scr/steps/save.py
 
 import logging
 from pathlib import Path
@@ -6,14 +6,17 @@ from .base import BaseStep
 import pickle
 class SaveData(BaseStep):
     """
-    Step to save the data as an 'after_autoreject' checkpoint. 
-    That means next run can skip 'AutoRejectStep' if the file is found.
-    
+    Save derivatives to disk (Raw or Epochs) in a standardized location.
+
+    Use this when you want a final derivative file (not a resume checkpoint).
+    For resume points during a pipeline run, prefer the dedicated SaveCheckpoint step
+    which uses the convention 'after_<step>' and is recognized by the resume logic.
+
     Example YAML usage:
-    ------------------
-    - name: SaveCheckpoint
+    - name: SaveData
       params:
-        checkpoint_key: "after_autoreject"  # or "post_ica", etc.
+        output_path: "data/processed/sub-01/ses-001/sub-01_ses-001_desc-clean-epo.fif"
+        overwrite: true
     """
 
     def run(self, data):

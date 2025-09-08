@@ -17,7 +17,7 @@ pipeline:
   - name: PrepChannelsStep
     params:
       channel_types:
-        X1:ECG: ecg
+        "X1:ECG": ecg
       on_missing: ignore
   - name: FilterStep
     params:

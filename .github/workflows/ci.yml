@@ -1,0 +1,61 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  lint-and-test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.10", "3.11"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Install deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install -r requirements-dev.txt
+          pip install pre-commit
+      - name: Run pre-commit
+        run: |
+          pre-commit run --all-files
+      - name: Run tests
+        run: pytest -q
+      - name: Validate configs
+        run: |
+          python - <<'PY'
+          import json, sys, yaml
+          from pathlib import Path
+          from jsonschema import Draft7Validator
+
+          schema = json.loads(Path('scr/config_schema.json').read_text())
+          validator = Draft7Validator(schema)
+          ok = True
+          for p in Path('configs').rglob('*'):
+            if p.suffix.lower() not in {'.json', '.yml', '.yaml'}:
+              continue
+            if 'drafts' in p.parts:
+              continue
+            try:
+              if p.suffix.lower() == '.json':
+                cfg = json.loads(p.read_text())
+              else:
+                cfg = yaml.safe_load(p.read_text())
+            except Exception as e:
+              print(f"[invalid parse] {p}: {e}")
+              ok = False
+              continue
+            errors = sorted(validator.iter_errors(cfg), key=lambda e: e.path)
+            if errors:
+              ok = False
+              print(f"[schema errors] {p}")
+              for err in errors:
+                loc = "/".join(str(x) for x in err.path) or '<root>'
+                print(f" - {loc}: {err.message}")
+          sys.exit(0 if ok else 1)
+          PY

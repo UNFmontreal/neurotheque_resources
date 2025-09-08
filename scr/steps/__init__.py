@@ -59,4 +59,8 @@ STEP_REGISTRY.update({
     "GoNoGoEpochingStep": GoNoGoEpochingStep,
 })
 
+# Note: AutoSave is inserted by the runner when `auto_save: true`.
+# Users generally do not need to place explicit Save... steps immediately
+# followed by AutoSave to avoid duplicate writes.
+
 logging.info("[__init__.py] All step classes have been registered in STEP_REGISTRY.")

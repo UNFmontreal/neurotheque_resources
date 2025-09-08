@@ -93,7 +93,7 @@ class TestPipelineIntegration(unittest.TestCase):
                     {
                         "name": "SaveCheckpoint",
                         "params": {
-                            "stage": "after_autoreject"
+                            "checkpoint_key": "after_autoreject"
                         }
                     }
                 ]

@@ -1,4 +1,4 @@
-# File: src/steps/splittasks.py
+# File: scr/steps/splittasks.py
 
 import logging
 import os

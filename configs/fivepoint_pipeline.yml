@@ -29,11 +29,9 @@ pipeline:
       - 60
   - name: EpochingStep
     params:
-      task_type: gng
+      task_type: "5pt"
       trigger_ids:
-        go: 1
-        nogo: 2
-        response: 3
+        trigger_id: 8  # Five-point uses a single trigger code
       epoch_params:
         tmin: -0.2
         tmax: 1.0
