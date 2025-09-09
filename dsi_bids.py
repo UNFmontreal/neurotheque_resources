@@ -409,7 +409,7 @@ def _iter_edfs(root: Path) -> Iterable[Path]:
 
 def main(argv: Optional[List[str]] = None) -> int:
     p = argparse.ArgumentParser(description="BIDSify a folder of DSI‑24 EDF files (JSON‑driven).")
-    p.add_argument("--config", required=True, help="Path to JSON config (see config_schema.json).")
+    p.add_argument("--config", required=True, help="Path to JSON config (see bidsfirst_config_schema.json).")
     p.add_argument("--source", required=True, help="Folder containing .edf files (recursed).")
     p.add_argument("--bids-root", required=True, help="Output BIDS root.")
     args = p.parse_args(argv)
@@ -452,4 +452,3 @@ def main(argv: Optional[List[str]] = None) -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

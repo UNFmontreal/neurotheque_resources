@@ -79,6 +79,11 @@ This repository is designed for both single-subject and multi-subject pipelines,
     # optional: dev tools
     pip install -r requirements-dev.txt       # adds pytest, black, flake8, etc.
     ```
+   Or install as a package for a cleaner setup:
+   ```bash
+   pip install -e .            # users
+   pip install -e .[dev]       # contributors (adds tests/docs tools)
+   ```
 3. **Supported Python**:
    - We test on Python 3.10–3.12 (recommended with MNE 1.5+).
 ## Usage Examples
@@ -266,6 +271,9 @@ python preprocess_batch.py \
   --task gonogo --n-jobs 1
 ```
 
-See `configs/examples/` for Go/No‑Go and Five‑Point examples, and `config_schema.json` for the schema driving both BIDSify and preprocessing.
+See `configs/examples/` for Go/No‑Go and Five‑Point examples.
+Schemas:
+- BIDS‑first examples: `bidsfirst_config_schema.json`
+- Modular pipeline: `scr/config_schema.json`
 
 

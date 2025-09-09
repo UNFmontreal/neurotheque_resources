@@ -3,6 +3,9 @@
   "title": "NeuroTheque Pipeline Configuration",
   "type": "object",
   "properties": {
+    "default_subject": {"type": "string", "description": "Default subject ID (e.g., '01')"},
+    "default_session": {"type": "string", "description": "Default session ID (e.g., '001')"},
+    "default_run": {"type": "string", "description": "Default run ID (e.g., '01')"},
     "directory": {
       "type": "object",
       "properties": {
@@ -59,7 +62,25 @@
             "properties": {
               "name": {
                 "type": "string",
-                "description": "Name of the step to execute"
+                "description": "Name of the step to execute",
+                "enum": [
+                  "LoadData",
+                  "FilterStep",
+                  "ICAStep",
+                  "ICAExtractionStep",
+                  "ICALabelingStep",
+                  "AutoRejectStep",
+                  "SaveCheckpoint",
+                  "SaveData",
+                  "PrepChannelsStep",
+                  "SplitTasksStep",
+                  "AutoSave",
+                  "EpochingStep",
+                  "TriggerParsingStep",
+                  "SyntheticRawStep",
+                  "GoNoGoTriggerStep",
+                  "GoNoGoEpochingStep"
+                ]
               },
               "params": {
                 "type": "object",

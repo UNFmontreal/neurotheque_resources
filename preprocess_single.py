@@ -293,7 +293,7 @@ def preprocess_one(
 
 def main(argv: Optional[list[str]] = None) -> int:
     ap = argparse.ArgumentParser(description="Preprocess a single BIDS run (JSON-driven).")
-    ap.add_argument("--config", required=True, help="JSON config (see config_schema.json)")
+    ap.add_argument("--config", required=True, help="JSON config (see bidsfirst_config_schema.json)")
     ap.add_argument("--bids-root", required=True)
     ap.add_argument("--sub", required=True)
     ap.add_argument("--ses")
@@ -310,4 +310,3 @@ def main(argv: Optional[list[str]] = None) -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

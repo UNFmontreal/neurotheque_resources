@@ -22,3 +22,36 @@ warn_return_any = true
 warn_unreachable = true
 no_implicit_optional = true
 strict_equality = true
+[project]
+name = "neurotheque-resources"
+version = "0.1.0"
+requires-python = ">=3.10"
+description = "EEG preprocessing and analysis pipeline (MNE, AutoReject, BIDS-first tools)"
+readme = "README.md"
+dependencies = [
+  "mne>=1.5.0",
+  "mne-bids>=0.13",
+  "numpy>=1.20.0",
+  "scipy>=1.6.0",
+  "matplotlib>=3.3.0",
+  "pandas>=1.2.0",
+  "autoreject>=0.3.0",
+  "mne-icalabel>=0.2.0",
+  "PyYAML>=6.0",
+  "jsonschema>=4.0.0",
+]
+
+[project.optional-dependencies]
+analysis = ["statsmodels>=0.12.0", "fooof>=1.0.0"]
+dev = [
+  "pytest>=7",
+  "pytest-cov>=4",
+  "black",
+  "isort",
+  "ruff",
+  "pre-commit",
+  "jupyter",
+  "sphinx",
+  "sphinx-rtd-theme",
+  "sphinx-autodoc-typehints",
+]

@@ -26,7 +26,7 @@ jobs:
           pre-commit run --all-files
       - name: Run tests
         run: pytest -q
-      - name: Validate configs
+      - name: Validate pipeline configs (modular)
         run: |
           python - <<'PY'
           import json, sys, yaml
@@ -41,11 +41,48 @@ jobs:
               continue
             if 'drafts' in p.parts:
               continue
+            if 'examples' in p.parts:
+              # examples are BIDS-first configs validated in a separate step
+              continue
             try:
               if p.suffix.lower() == '.json':
                 cfg = json.loads(p.read_text())
               else:
                 cfg = yaml.safe_load(p.read_text())
+            except Exception as e:
+              print(f"[invalid parse] {p}: {e}")
+              ok = False
+              continue
+            errors = sorted(validator.iter_errors(cfg), key=lambda e: e.path)
+            if errors:
+              ok = False
+              print(f"[schema errors] {p}")
+              for err in errors:
+                loc = "/".join(str(x) for x in err.path) or '<root>'
+                print(f" - {loc}: {err.message}")
+          sys.exit(0 if ok else 1)
+          PY
+
+      - name: Validate BIDS-first example configs
+        run: |
+          python - <<'PY'
+          import json, sys
+          from pathlib import Path
+          from jsonschema import Draft7Validator
+          schema_path = Path('bidsfirst_config_schema.json')
+          if not schema_path.exists():
+            print('[skip] bidsfirst_config_schema.json not found')
+            raise SystemExit(0)
+          schema = json.loads(schema_path.read_text())
+          validator = Draft7Validator(schema)
+          ok = True
+          ex_dir = Path('configs/examples')
+          if not ex_dir.exists():
+            print('[skip] configs/examples not present')
+            raise SystemExit(0)
+          for p in ex_dir.rglob('*.json'):
+            try:
+              cfg = json.loads(p.read_text())
             except Exception as e:
               print(f"[invalid parse] {p}: {e}")
               ok = False

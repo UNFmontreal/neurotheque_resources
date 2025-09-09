@@ -116,13 +116,8 @@ def generate_pipeline_config(parameters, output_file="pipeline_config.yaml"):
                     "name": "PrepChannelsStep",
                     "params": {
                         "rename_dict": None,
-                        "drop_channels": ["PHOTO"] if "drop_channels" not in parameters['prepchannels'] else parameters['prepchannels']['drop_channels']
-                    }
-                },
-                {
-                    "name": "ReferenceStep",
-                    "params": {
-                        "reference": parameters['reference'].get('reference', "average")
+                        "drop_channels": ["PHOTO"] if "drop_channels" not in parameters['prepchannels'] else parameters['prepchannels']['drop_channels'],
+                        "reference": {"method": "channels", "channels": parameters['reference'].get('channels', ["Pz"])}
                     }
                 },
                 {
@@ -199,7 +194,7 @@ def main():
         if generate_pipeline_config(parameters, output_file):
             print(f"Success! Pipeline configuration saved to {output_file}")
             print("You can use this configuration with the pipeline by running:")
-            print(f"python scr/pipeline.py --config {output_file}")
+            print(f"python -m scr.pipeline --config {output_file}")
     else:
         print("Error: Failed to extract parameters from log file.")
         print("Make sure you've run the test script first to generate debug_log.txt")

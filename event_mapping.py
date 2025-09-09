@@ -5,7 +5,7 @@ Converts a raw events array (n, 3) into:
   - mapped events (with debounced / onset-shifted samples)
   - event_id {label -> code} suitable for MNE/MNE-BIDS
 
-Expected task JSON structure (per config_schema.json):
+Expected task JSON structure (per bidsfirst_config_schema.json):
 {
   "event_map": { "GO": [1], "NOGO": [2], "START": [7] },
   "aliases?": { "Start": 7 },
@@ -123,4 +123,3 @@ def map_events_from_config(
         ev_keep = ev_keep[np.argsort(ev_keep[:, 0])]
 
     return ev_keep, dict(event_id)
-

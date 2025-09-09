@@ -1,0 +1,51 @@
+{
+  "project": {"name": "neurotheque-examples", "version": "0.1.0"},
+  "paths": {
+    "source_root": "./data/input",
+    "bids_root": "./derivatives/bids",
+    "derivatives_root": null,
+    "overwrite": false
+  },
+  "bids": {
+    "manufacturer": "Wearable Sensing",
+    "manufacturersModelName": "DSI-24",
+    "line_freq": 60,
+    "montage": "standard_1020",
+    "eeg_reference": "average",
+    "dataset_description": {"Name": "DSI-24 Example", "BIDSVersion": "1.8.0"}
+  },
+  "filename_parsing": {
+    "patterns": [
+      "(?P<subject>\\d+)[_-](?P<session>\\d+).*?(?P<task>5pt).*?(?P<run>\\d+)",
+      "sub[-_](?P<subject>\\d+).*?ses[-_](?P<session>\\d+).*?task[-_](?P<task>[A-Za-z0-9]+).*?run[-_](?P<run>\\d+)"
+    ],
+    "fallbacks": {"subject": "01", "session": "001", "task": "5pt", "run": "01"}
+  },
+  "events": {
+    "trigger_channel": "Trigger",
+    "default_task": "5pt",
+    "tasks": {
+      "5pt": {
+        "event_map": {"stim": [1], "response": [2]},
+        "onset_shift_sec": 0.0,
+        "debounce_ms": 5.0,
+        "epoching": {"tmin": -0.2, "tmax": 0.8, "baseline": [null, 0.0], "preload": true, "reject_by_annotation": true}
+      }
+    }
+  },
+  "preprocessing": {
+    "resample_sfreq": null,
+    "filter": {"l_freq": 1.0, "h_freq": 40.0},
+    "notch": {"freqs": [60, 120]},
+    "bad_channels": [],
+    "reref": "average",
+    "ica": {"method": "fastica", "n_components": "auto", "ecg": true, "eog": true, "reject_by_annotation": true},
+    "autoreject": {"enabled": false, "method": "local"},
+    "metrics": {"psd": true, "epochs_rejection": true},
+    "save_intermediates": true
+  },
+  "report": {"enabled": true, "title": "Neurothèque Preprocessing Report", "sections": ["psd", "ica", "epochs"], "include_logs": true},
+  "logging": {"level": "INFO", "json_log": true, "log_to_console": true},
+  "batch": {"mode": "single", "n_jobs": 1}
+}
+
