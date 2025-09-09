@@ -1,0 +1,25 @@
+# Quarantined example (invalid before). Use JSON for classroom demos.
+# This placeholder avoids CI schema validation for draft content.
+
+auto_save: false
+directory:
+  root: "."
+  raw_data_dir: "data/raw"
+  processed_dir: "data/processed"
+  reports_dir: "reports"
+  derivatives_dir: "derivatives"
+
+pipeline:
+  steps:
+    - name: SyntheticRawStep
+      params:
+        duration_sec: 0.5
+        sfreq: 100.0
+    - name: FilterStep
+      params:
+        l_freq: 1.0
+        h_freq: 40.0
+    - name: SaveCheckpoint
+      params:
+        checkpoint_key: after_filter
+        overwrite: true

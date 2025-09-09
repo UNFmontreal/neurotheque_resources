@@ -1,0 +1,18 @@
+{
+  "project": { "name": "neurotheque", "version": "0.1.0" },
+  "paths": {
+    "source_root": "/ABS/PATH/TO/edfs",
+    "bids_root": "/ABS/PATH/TO/bids",
+    "derivatives_root": null,
+    "overwrite": true
+  },
+  "events": {
+    "trigger_channel": "Trigger",
+    "default_task": "fivept",
+    "tasks": {
+      "fivept": {
+        "event_map": { "FIX": [10], "TARGET": [11, 12, 13, 14, 15], "RESPONSE": [16] }
+      }
+    }
+  }
+}

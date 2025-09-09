@@ -13,7 +13,10 @@ class GoNoGoEpochingStep(BaseStep):
 
         # We rely on data.info['parsed_events'] from GoNoGoTriggerStep
         if 'parsed_events' not in data.info:
-            raise ValueError("No 'parsed_events' found. Run triggers step first?")
+            raise ValueError(
+                "[GoNoGoEpochingStep] Missing parsed_events. Run GoNoGoTriggerStep first, "
+                "or ensure your config includes it before epoching."
+            )
 
         events = data.info['parsed_events']
         event_id = self.params.get("event_id", {

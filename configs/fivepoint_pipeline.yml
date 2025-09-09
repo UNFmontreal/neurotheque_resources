@@ -52,4 +52,5 @@ pipeline:
   - name: SaveCheckpoint
     params:
       overwrite: true
+      checkpoint_key: after_epoching
 pipeline_mode: standard

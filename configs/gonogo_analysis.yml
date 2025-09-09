@@ -1,6 +1,8 @@
 ## Go/No-Go analysis example
 # Optional specialized steps are registered conditionally (see scr/steps/__init__.py).
-# Expected input: a single preprocessed Raw/Epochs file.
+# Prerequisite: run minimal preprocessing first (e.g., configs/gonogo_minimal_pipeline.json)
+# to generate a preprocessed FIF. Expected naming:
+#   data/processed/sub-<id>/ses-<id>/sub-<id>_ses-<id>_task-gng_raw.fif
 
 auto_save: false
 default_subject: "01"

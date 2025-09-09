@@ -1,0 +1,209 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://unfmontreal.github.io/neurotheque_resources/config_schema_bidsfirst.json",
+  "title": "Neurothèque DSI-24 BIDS-first pipeline config",
+  "type": "object",
+  "required": ["project", "paths", "bids", "filename_parsing", "events", "preprocessing", "report", "logging", "batch"],
+  "properties": {
+    "project": {
+      "type": "object",
+      "required": ["name", "version"],
+      "properties": {
+        "name": { "type": "string" },
+        "version": { "type": "string" },
+        "random_seed": { "type": ["integer", "null"] },
+        "parallel_jobs": { "type": ["integer", "null"], "minimum": 1 }
+      },
+      "additionalProperties": false
+    },
+    "paths": {
+      "type": "object",
+      "required": ["source_root", "bids_root"],
+      "properties": {
+        "source_root": { "type": "string" },
+        "bids_root": { "type": "string" },
+        "derivatives_root": { "type": ["string", "null"] },
+        "overwrite": { "type": "boolean", "default": false }
+      },
+      "additionalProperties": false
+    },
+    "bids": {
+      "type": "object",
+      "required": ["manufacturer", "manufacturersModelName"],
+      "properties": {
+        "manufacturer": { "type": "string", "const": "Wearable Sensing" },
+        "manufacturersModelName": { "type": "string", "const": "DSI-24" },
+        "line_freq": { "type": ["integer", "null"], "enum": [50, 60, null] },
+        "montage": {
+          "oneOf": [
+            { "type": "string", "enum": ["standard_1020"] },
+            {
+              "type": "object",
+              "properties": {
+                "kind": { "type": "string", "const": "dig_montage" },
+                "path": { "type": "string" }
+              },
+              "required": ["kind", "path"],
+              "additionalProperties": false
+            }
+          ]
+        },
+        "eeg_reference": {
+          "type": ["string", "null"],
+          "description": "e.g., 'average' | 'linked_mastoids' | 'M1,M2' (applied in preprocessing, recorded in sidecar)"
+        },
+        "dataset_description": { "type": "object" }
+      },
+      "additionalProperties": false
+    },
+    "filename_parsing": {
+      "type": "object",
+      "required": ["patterns", "fallbacks"],
+      "properties": {
+        "patterns": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "regex with named groups: subject, session?, task?, run?"
+        },
+        "fallbacks": {
+          "type": "object",
+          "properties": {
+            "subject": { "type": "string", "default": "01" },
+            "session": { "type": "string", "default": "01" },
+            "task": { "type": "string" },
+            "run": { "type": "string", "default": "01" }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "events": {
+      "type": "object",
+      "required": ["trigger_channel", "default_task", "tasks"],
+      "properties": {
+        "trigger_channel": { "type": "string", "default": "Trigger" },
+        "default_task": { "type": "string" },
+        "tasks": {
+          "type": "object",
+          "propertyNames": { "pattern": "^[a-zA-Z0-9_\\-]+$" },
+          "additionalProperties": {
+            "type": "object",
+            "required": ["event_map", "epoching"],
+            "properties": {
+              "event_map": {
+                "type": "object",
+                "additionalProperties": {
+                  "type": ["array","integer","string"],
+                  "items": { "type": ["integer","string"] }
+                }
+              },
+              "aliases": {
+                "type": "object",
+                "additionalProperties": { "type": "integer" }
+              },
+              "onset_shift_sec": { "type": "number", "default": 0.0 },
+              "debounce_ms": { "type": "number", "default": 5.0 },
+              "epoching": {
+                "type": "object",
+                "required": ["tmin", "tmax", "baseline"],
+                "properties": {
+                  "tmin": { "type": "number" },
+                  "tmax": { "type": "number" },
+                  "baseline": {
+                    "type": ["array","null"],
+                    "items": { "type": ["number","null"] },
+                    "minItems": 2, "maxItems": 2
+                  },
+                  "preload": { "type": "boolean", "default": true },
+                  "reject_by_annotation": { "type": "boolean", "default": true }
+                }
+              }
+            }
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "preprocessing": {
+      "type": "object",
+      "properties": {
+        "resample_sfreq": { "type": ["number","null"] },
+        "filter": {
+          "type": "object",
+          "properties": {
+            "l_freq": { "type": ["number","null"] },
+            "h_freq": { "type": ["number","null"] }
+          }
+        },
+        "notch": {
+          "type": "object",
+          "properties": {
+            "freqs": {
+              "type": "array",
+              "items": { "type": "number" }
+            }
+          }
+        },
+        "bad_channels": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "reref": { "type": "string", "default": "average" },
+        "ica": {
+          "type": "object",
+          "properties": {
+            "method": { "type": "string", "enum": ["picard","fastica","infomax"] },
+            "n_components": { "type": ["string","integer"], "default": "auto" },
+            "ecg": { "type": "boolean", "default": true },
+            "eog": { "type": "boolean", "default": true },
+            "reject_by_annotation": { "type": "boolean", "default": true }
+          }
+        },
+        "autoreject": {
+          "type": "object",
+          "properties": {
+            "enabled": { "type": "boolean", "default": false },
+            "method": { "type": "string", "default": "local" }
+          }
+        },
+        "metrics": {
+          "type": "object",
+          "properties": {
+            "psd": { "type": "boolean", "default": true },
+            "epochs_rejection": { "type": "boolean", "default": true }
+          }
+        },
+        "save_intermediates": { "type": "boolean", "default": true }
+      }
+    },
+    "report": {
+      "type": "object",
+      "properties": {
+        "enabled": { "type": "boolean", "default": true },
+        "title": { "type": "string", "default": "Neurothèque Preprocessing Report" },
+        "sections": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "include_logs": { "type": "boolean", "default": true }
+      }
+    },
+    "logging": {
+      "type": "object",
+      "properties": {
+        "level": { "type": "string", "default": "INFO" },
+        "json_log": { "type": "boolean", "default": true },
+        "log_to_console": { "type": "boolean", "default": true }
+      }
+    },
+    "batch": {
+      "type": "object",
+      "properties": {
+        "mode": { "type": "string", "enum": ["single","batch"], "default": "single" },
+        "n_jobs": { "type": "integer", "default": 1 }
+      }
+    }
+  }
+}
+

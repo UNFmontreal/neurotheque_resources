@@ -1,4 +1,0 @@
-# Example: blended single-/multi-subject configuration
-# Note: sections like multi_* flags are optional depending on your use-case.
-# Prefer validated JSON for classroom usage; YAML remains supported.
-$(sed 's/.*/+&/' config/pipeline_config.yml | sed '1,1d')

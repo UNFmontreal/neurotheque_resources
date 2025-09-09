@@ -57,6 +57,11 @@ This repository is designed for both single-subject and multi-subject pipelines,
   - **unit/** – Tests for individual steps and utility functions.
   - **integration/** – Tests for complete workflows and pipeline configurations.
 
+### Where Files Go
+- Processed data: `data/processed/sub-<id>/ses-<id>/*.fif` (via `ProjectPaths.get_derivative_path`/`get_checkpoint_path`)
+- Split tasks: `data/processed/sub-<id>/ses-<id>/*_split.fif` (via `get_split_task_path`)
+- Reports: `reports/<type>/sub-<id>/ses-<id>/[...]`
+
 ---
 
 ## Getting Started
@@ -185,6 +190,11 @@ Some examples (e.g., spectral modeling/FOOOF, mixed-effects) require additional 
 
 Install on demand, for example: `pip install fooof statsmodels`.
 
+### Task Splitting
+- Example config: `configs/task_splitting_pipeline.yml`
+- Preview segments (no execution):
+  `python -m scr.pipeline --dry-run --config configs/task_splitting_pipeline.yml`
+
 ## Testing
 
 The Neurotheque pipeline includes a comprehensive test suite to ensure reliability and robustness. The tests are organized into unit tests (for individual components) and integration tests (for workflows and complete pipelines).
@@ -216,4 +226,46 @@ python tests/run_tests.py --integration # integration only
 For detailed information about the test suite, including how to add new tests, see the [tests/README.md](tests/README.md) file.
 
 ---
+
+## BIDS‑first DSI‑24 Pipeline (New)
+
+This repository now ships a BIDS‑native preprocessing flow for DSI‑24 EDF recordings:
+
+1. BIDSify your raw `.edf` folder (entity inference + event mapping via JSON)
+2. Preprocess from BIDS using the same JSON (filters/notch/reref/ICA/optional autoreject/epoching)
+3. Outputs are saved under BIDS derivatives with a comprehensive MNE HTML report
+
+### 1) BIDSify a folder of EDFs
+```bash
+python dsi_bids.py \
+  --config configs/examples/gonogo.json \
+  --source /path/to/source_edfs \
+  --bids-root /path/to/bids_root
+```
+Notes:
+- If your filenames are non‑standard, the tool applies documented regex patterns + fallbacks from the config to infer `subject`, `session`, `task`, `run`.
+- Events are discovered from the Trigger channel and mapped purely from JSON (no per‑task if/elif).
+- A per‑file JSON log is written to `derivatives/neurotheque-preproc/logs/`.
+
+### 2) Preprocess a single BIDS run
+```bash
+python preprocess_single.py \
+  --config configs/examples/gonogo.json \
+  --bids-root /path/to/bids_root \
+  --sub 01 --ses 001 --task gonogo --run 01
+```
+This writes cleaned FIF/epochs/evokeds/figures and a Report to:
+`derivatives/neurotheque-preproc/<version>/...` and
+`derivatives/neurotheque-preproc/reports/...`.
+
+### 3) Batch preprocess across the dataset
+```bash
+python preprocess_batch.py \
+  --config configs/examples/gonogo.json \
+  --bids-root /path/to/bids_root \
+  --task gonogo --n-jobs 1
+```
+
+See `configs/examples/` for Go/No‑Go and Five‑Point examples, and `config_schema.json` for the schema driving both BIDSify and preprocessing.
+
 

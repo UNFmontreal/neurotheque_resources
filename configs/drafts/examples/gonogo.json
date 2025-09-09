@@ -1,0 +1,21 @@
+{
+  "project": { "name": "neurotheque", "version": "0.1.0" },
+  "paths": {
+    "source_root": "/ABS/PATH/TO/edfs",
+    "bids_root": "/ABS/PATH/TO/bids",
+    "derivatives_root": null,
+    "overwrite": true
+  },
+  "bids": {
+    "manufacturer": "Wearable Sensing",
+    "manufacturersModelName": "DSI-24",
+    "line_freq": 60,
+    "montage": "standard_1020",
+    "eeg_reference": "average",
+    "dataset_description": {
+      "Name": "Neurothèque — Go/No-Go",
+      "BIDSVersion": "1.8.0",
+      "Authors": ["Neurothèque team"]
+    }
+  }
+}

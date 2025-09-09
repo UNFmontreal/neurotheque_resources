@@ -1,4 +1,4 @@
-# File: scr/steps/gonogo_analysis.py
+# File: scr/steps/gonogo_analysis_v2.py
 
 import logging
 import re

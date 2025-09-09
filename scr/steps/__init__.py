@@ -34,8 +34,11 @@ from .triggers import TriggerParsingStep
 try:
     from .triggers_gonogo import GoNoGoTriggerStep
     from .epoching_gonogo import GoNoGoEpochingStep
-except ImportError:
-    logging.warning("GoNoGo specialized steps not found. Skipping...")
+except ImportError as e:
+    logging.exception(
+        "GoNoGo specialized steps failed to import. These are optional. Hint: ensure module names are correct and dependencies installed. Error: %s",
+        e,
+    )
 
 
 # Register them in the global STEP_REGISTRY
@@ -64,3 +67,24 @@ STEP_REGISTRY.update({
 # followed by AutoSave to avoid duplicate writes.
 
 logging.info("[__init__.py] All step classes have been registered in STEP_REGISTRY.")
+
+__all__ = [
+    "STEP_REGISTRY",
+    "BaseStep",
+    "LoadData",
+    "FilterStep",
+    "ICAStep",
+    "ICAExtractionStep",
+    "ICALabelingStep",
+    "AutoRejectStep",
+    "SaveCheckpoint",
+    "SaveData",
+    "PrepChannelsStep",
+    "SplitTasksStep",
+    "AutoSave",
+    "EpochingStep",
+    "TriggerParsingStep",
+    "SyntheticRawStep",
+    "GoNoGoTriggerStep",
+    "GoNoGoEpochingStep",
+]

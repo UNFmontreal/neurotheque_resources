@@ -34,10 +34,7 @@ pipeline:
       params:
         task_type: "5pt"
         trigger_ids:
-          start: 8     # Task start trigger
-          end: 8       # Task end trigger
-          onset: 8     # When 5 points appear
-          response: 8  # First touch by participant
+          trigger_id: 8  # Five-point uses a single trigger code
         epoch_params:
           tmin: -0.2   # Time before trigger
           tmax: 1.0    # Time after trigger

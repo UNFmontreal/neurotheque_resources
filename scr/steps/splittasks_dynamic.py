@@ -1,4 +1,7 @@
-# File: scr/steps/splittasks.py
+"""Dynamic task splitting step.
+
+File: scr/steps/splittasks_dynamic.py
+"""
 
 import logging
 import os
@@ -31,18 +34,27 @@ class SplitTasksStep(BaseStep):
             raise ValueError("[SplitTasksStep] No data to split.")
 
 
-        # 1) Ensure we have an output folder (subject-specific if pipeline rewrote it)
+        # 1) Ensure required runtime context is available
+        missing = [k for k in ("paths", "subject_id", "session_id") if k not in self.params]
+        if missing:
+            raise ValueError(
+                "[SplitTasksStep] Missing required keys: "
+                + ", ".join(missing)
+                + ". The runner normally passes these; ensure your config enables multi-file mode or provides them."
+            )
+
         sub_id = self.params["subject_id"]
         ses_id = self.params["session_id"]
-        paths=self.params['paths']
+        paths = self.params["paths"]
         out_dir = paths.get_split_task_path(sub_id, ses_id)
-        if not out_dir:
-            raise ValueError("[SplitTasksStep] 'output_folder' param is required.")
 
         # 2) Get tasks
         tasks = self.params.get("tasks", [])
         if not tasks:
             logging.warning("[SplitTasksStep] No tasks defined. Doing nothing.")
+            logging.info(
+                "[SplitTasksStep] Define tasks: [...] under params.tasks. See 'configs/task_splitting_pipeline.yml' for a working example."
+            )
             return data
 
         # 3) Find triggers

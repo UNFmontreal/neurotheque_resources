@@ -7,6 +7,7 @@ directory:
 
 default_subject: "sub-01" 
 default_session: "ses-001"
+default_run: "01"
 
 pipeline:
   multi_subject: true
@@ -35,8 +36,7 @@ pipeline:
 
     - name: SaveCheckpoint
       params:
-        # Will be dynamically rewritten to sub-X/ses-Y in pipeline.py
-        output_path: "data/pilot_data/after_autoreject.fif"
+        checkpoint_key: "after_autoreject"
         overwrite: true
 
     # - name: ICAStep

@@ -30,6 +30,12 @@ try:
 except Exception:
     _HAS_MNE_BIDS = False
 
+# Optional import: JSON-driven event mapping (new unified logic)
+try:
+    from event_mapping import map_events_from_config  # type: ignore
+except Exception:  # pragma: no cover - keep backward compatible without root import
+    map_events_from_config = None  # type: ignore
+
 # ---------- Constants & vendor quirks ----------
 LEGACY_TO_1020 = {"T3": "T7", "T4": "T8", "T5": "P7", "T6": "P8"}
 
@@ -482,32 +488,54 @@ def bidsify_edf(
     stim_ch = find_stim_channel(raw)
     events, event_id = extract_events_and_id(raw, stim_ch, mask=0xFF)
 
-    # Optional event description mapping (JSON): {"123": "go", "124": "nogo", "onset": 801, ...}
-    # MNE-BIDS expects event_id: {description -> code}; if provided, enforce it.
+    # Optional JSON-driven mapping using the shared event_mapping module.
+    # Supports either a minimal "task_config" object with an "event_map" key
+    # or the legacy simple code<->description dict.
     if event_map_json:
         with open(event_map_json, "r", encoding="utf-8") as f:
             user_map = json.load(f)
-        # Normalize keys to int codes; values to descriptions (strings)
-        norm_map: Dict[str, int] = {}
-        for k, v in user_map.items():
-            # accept numeric code as string or int; or description->code
-            if isinstance(k, str) and k.isdigit():
-                norm_map[str(v)] = int(k)
-            elif isinstance(v, int):
-                norm_map[str(k)] = int(v)
-            else:
-                raise ValueError("event_map_json must map code<->description (use int codes).")
-        # Remap codes in events if user_map changes them
-        merged_id, remap = _resolve_event_id_conflicts(norm_map, event_id)
-        if events.size and remap:
-            ev = events.copy()
-            for old, new in remap.items():
-                ev[ev[:, 2] == old, 2] = new
-            events = ev
-        event_id = merged_id
 
-    # Special-case: five-point task (alternate onset / first_touch)
-    if task.lower() in {"5pt", "fivepoint", "five_point", "five-point"} and events.size >= 3:
+        # Preferred: if new-style task config is provided, use it to map events.
+        if isinstance(user_map, dict) and ("event_map" in user_map or "debounce_ms" in user_map or "onset_shift_sec" in user_map or "events" in user_map or "tasks" in user_map):
+            if map_events_from_config is None:
+                raise RuntimeError("event_mapping module not available to apply JSON-driven mapping.")
+            task_cfg = None
+            # Full pipeline config style: {"events": {"default_task":..., "tasks": {<task>: {event_map...}}}}
+            if "events" in user_map and isinstance(user_map["events"], dict):
+                evs = user_map["events"]
+                tasks = evs.get("tasks") or {}
+                # Prefer the requested task; fallback to default_task
+                task_cfg = tasks.get(task.lower()) or tasks.get(str(evs.get("default_task", "")).lower())
+            # Or direct task-config dict with event_map at top-level
+            if task_cfg is None and "event_map" in user_map:
+                task_cfg = user_map
+
+            if task_cfg is None or "event_map" not in task_cfg:
+                raise ValueError("Provided JSON does not contain a usable 'event_map' configuration.")
+
+            mapped_events, new_event_id = map_events_from_config(raw, events, task_cfg)
+            events = mapped_events
+            event_id = new_event_id
+        else:
+            # Legacy: {code->desc} or {desc->code}. Coerce to {desc->code}.
+            norm_map: Dict[str, int] = {}
+            for k, v in user_map.items():
+                if isinstance(k, str) and k.isdigit():
+                    norm_map[str(v)] = int(k)
+                elif isinstance(v, int):
+                    norm_map[str(k)] = int(v)
+                else:
+                    raise ValueError("event_map_json must map code<->description (use int codes).")
+            merged_id, remap = _resolve_event_id_conflicts(norm_map, event_id)
+            if events.size and remap:
+                ev = events.copy()
+                for old, new in remap.items():
+                    ev[ev[:, 2] == old, 2] = new
+                events = ev
+            event_id = merged_id
+
+    # Remove per-task special-casing when JSON mapping is provided; otherwise keep legacy fallback
+    if (not event_map_json) and task.lower() in {"5pt", "fivepoint", "five_point", "five-point"} and events.size >= 3:
         mid = events[1:-1]
         onset_list, resp_list = [], []
         for i, e in enumerate(mid):
@@ -604,7 +632,11 @@ def _build_arg_parser():
     p.add_argument("--no-montage", action="store_true", help="Disable applying standard_1020 montage")
     # Event handling
     p.add_argument("--event-map", type=str, default=None,
-                   help="JSON mapping event codes <-> descriptions to force trial_type labels")
+                   help=(
+                       "Path to JSON. Accepts: (1) legacy {code<->description} dict, "
+                       "(2) a task-config with 'event_map', or (3) the full BIDS-first config "
+                       "(selects events.tasks[--task] or default_task)."
+                   ))
     # Task splitting
     p.add_argument("--task-splits", type=str, default=None,
                    help="JSON specifying task segments by start/stop codes")

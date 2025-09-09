@@ -1,0 +1,44 @@
+{
+  "auto_save": true,
+  "default_run": "01",
+  "default_session": "001",
+  "default_subject": "01",
+  "directory": {
+    "derivatives_dir": "derivatives",
+    "processed_dir": "data/processed",
+    "raw_data_dir": "data/pilot_data/",
+    "reports_dir": "reports/fivepoint",
+    "root": "."
+  },
+  "file_path_pattern": "sub-01_ses-001_task-5pt_run-01_raw.edf",
+  "pipeline": {
+    "steps": [
+      { "name": "LoadData", "params": { "input_file": null } },
+      {
+        "name": "PrepChannelsStep",
+        "params": {
+          "on_missing": "ignore",
+          "reference": { "method": "average", "projection": false }
+        }
+      },
+      {
+        "name": "FilterStep",
+        "params": { "h_freq": 40.0, "l_freq": 1.0, "notch_freqs": [50, 60] }
+      },
+      {
+        "name": "EpochingStep",
+        "params": {
+          "task_type": "5pt",
+          "trigger_ids": { "trigger_id": 8 },
+          "epoch_params": { "tmin": -0.2, "tmax": 1.0, "baseline": [null, 0], "preload": true, "reject_by_annotation": true },
+          "stim_channel": "Trigger",
+          "returns_epochs": true,
+          "visualize_events": true,
+          "plot_params": { "duration": 10.0, "tstart": 0.0, "interactive": true, "save_plots": true, "save_dir": "figures/events" }
+        }
+      },
+      { "name": "SaveCheckpoint", "params": { "overwrite": true, "checkpoint_key": "after_epoching" } }
+    ]
+  },
+  "pipeline_mode": "standard"
+}
