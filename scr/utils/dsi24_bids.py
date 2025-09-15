@@ -30,6 +30,11 @@ try:
 except Exception:
     _HAS_MNE_BIDS = False
 
+# Note: Mario-specific behavior alignment step is imported lazily inside
+# bidsify_edf to surface any import errors directly when used.
+MarioEventAlignmentStep = None  # type: ignore
+_HAS_MARIO_ALIGN = None  # determined lazily
+
 # Optional import: JSON-driven event mapping (new unified logic)
 try:
     from event_mapping import map_events_from_config  # type: ignore
@@ -419,6 +424,12 @@ def _write_one_bids_run(
     except Exception:
         pass    
     
+    # Guard against any out-of-range event onsets (can occur with EDF annotations)
+    if events is not None and getattr(events, 'size', 0):
+        mask = (events[:, 0] >= 0) & (events[:, 0] < raw.n_times)
+        if not np.all(mask):
+            events = events[mask]
+
     write_raw_bids(
         raw_to_write,
         bids_path,
@@ -456,6 +467,9 @@ def bidsify_edf(
     apply_montage: bool = True,
     event_map_json: Optional[Path | str] = None,
     task_splits_json: Optional[Path | str] = None,
+    # Mario-specific optional inputs: if provided, build behavior-aligned events
+    mario_behav_tsv: Optional[Path | str] = None,
+    mario_align_params: Optional[dict] = None,
 ) -> List["BIDSPath"]:
     """
     Read an EDF, normalize/annotate channels, extract events, and write BIDS.
@@ -484,14 +498,74 @@ def bidsify_edf(
         normalize_dsi_channel_names(raw)
         set_channel_types(raw)
 
-    # Events (union of stim & annotations)
+    # Events: Prefer Mario behavior-aligned events when a behavior TSV is provided; otherwise use
+    # union of stim & annotations (dropping annotation-derived duplicates).
     stim_ch = find_stim_channel(raw)
-    events, event_id = extract_events_and_id(raw, stim_ch, mask=0xFF)
+    events: np.ndarray
+    event_id: Dict[str, int]
+
+    used_mario = False
+    if mario_behav_tsv is not None:
+        # Lazy import with helpful error if it fails
+        global MarioEventAlignmentStep, _HAS_MARIO_ALIGN
+        if MarioEventAlignmentStep is None or _HAS_MARIO_ALIGN in (None, False):
+            try:
+                from scr.steps.triggers_mario import MarioEventAlignmentStep as _Mario  # type: ignore
+                MarioEventAlignmentStep = _Mario  # cache
+                _HAS_MARIO_ALIGN = True
+            except Exception as e:  # pragma: no cover
+                _HAS_MARIO_ALIGN = False
+                raise RuntimeError(f"MarioEventAlignmentStep import failed: {e}") from e
+        # Build alignment params with sensible defaults, allowing overrides
+        align_params = {
+            'behav_tsv_path': str(mario_behav_tsv),
+            'stim_channel': stim_ch or 'Trigger',
+            'frame_bit_mask': 2,
+            'gap_threshold_s': 0.5,
+            'max_match_dist_s': 3.0,
+            'drift_threshold_ms_per_min': 1.0,
+            'prefer_meta_fps': True,
+            'plot': False,
+            'summary_dir': str(Path(bids_root) / 'mario_alignment_summary' / f'sub-{subject}' / f'ses-{session}' / (f'run-{run}' if run else 'run-01')),
+        }
+        if mario_align_params:
+            align_params.update(mario_align_params)
+            # Ensure stim channel stays consistent with the data
+            align_params['stim_channel'] = align_params.get('stim_channel') or (stim_ch or 'Trigger')
+        # Run alignment; step writes results into raw.info['temp']
+        MarioEventAlignmentStep(params=align_params).run(raw)
+        temp = raw.info.get('temp', {}) if hasattr(raw, 'info') else {}
+        evb = temp.get('behavior_events')
+        eidb = temp.get('behavior_event_id') or {}
+        if isinstance(evb, np.ndarray) and evb.size:
+            events = evb.astype(int)
+            event_id = {str(k): int(v) for k, v in eidb.items()}
+            used_mario = True
+        else:
+            # Fallback to generic extraction if behavior alignment produced nothing
+            events = np.empty((0, 3), dtype=int)
+            event_id = {}
+
+    if not used_mario:
+        events, event_id = extract_events_and_id(raw, stim_ch, mask=0xFF)
+        # Prefer digital stim channel codes; remove annotation-offset codes (>= ANNOT_CODE_OFFSET)
+        if events.size:
+            keep = events[:, 2] < ANNOT_CODE_OFFSET
+            if not np.all(keep):
+                events = events[keep]
+            # De-duplicate by (sample, code) ignoring the 'previous' column
+            if events.size:
+                key = events[:, [0, 2]]
+                _, uniq_idx = np.unique(key, axis=0, return_index=True)
+                events = events[np.sort(uniq_idx)]
+        if event_id:
+            present_codes = set(map(int, np.unique(events[:, 2]).tolist())) if events.size else set()
+            event_id = {k: v for k, v in event_id.items() if int(v) < ANNOT_CODE_OFFSET and (not present_codes or int(v) in present_codes)}
 
     # Optional JSON-driven mapping using the shared event_mapping module.
     # Supports either a minimal "task_config" object with an "event_map" key
     # or the legacy simple code<->description dict.
-    if event_map_json:
+    if event_map_json and (not used_mario):
         with open(event_map_json, "r", encoding="utf-8") as f:
             user_map = json.load(f)
 
@@ -562,10 +636,19 @@ def bidsify_edf(
             sfreq=raw.info["sfreq"],
             event_desc=descs,
         )
-        if raw.annotations is not None and len(raw.annotations) > 0:
-            raw.set_annotations(raw.annotations + annots)
-        else:
-            raw.set_annotations(annots)
+        # Some EDFs carry existing annotations with a non-None orig_time.
+        # Adding annotations requires identical orig_time; if they differ, fall back to replacing.
+        try:
+            if raw.annotations is not None and len(raw.annotations) > 0:
+                raw.set_annotations(raw.annotations + annots)
+            else:
+                raw.set_annotations(annots)
+        except ValueError as e:
+            if "orig_time should be the same" in str(e):
+                # Replace with new annotations instead of union to avoid failure
+                raw.set_annotations(annots)
+            else:
+                raise
 
     # Optional task splitting by event markers, e.g.,
     # task_splits_json = {"gonogo":{"start":101,"stop":102}, "stroop":{"start":201,"stop":202}}

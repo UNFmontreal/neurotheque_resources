@@ -70,6 +70,7 @@ class ICAExtractionStep(BaseStep):
             "max_iter": 2000,
             "fit_params": {"extended": True, "l_rate": 1e-3},
             "decim": 3,
+            "picks": "eeg",           # restrict ICA to EEG channels by default
             "use_good_epochs_only": True,
             "random_state": 42,
             "plot_dir": None,          # Will default to a subdirectory of paths
@@ -210,9 +211,33 @@ class ICAExtractionStep(BaseStep):
         # 5) Fit ICA
         # --------------------------
         logging.info(f"[ICAExtractionStep] Fitting ICA with {ica.n_components} components using {params['method']} method...")
+        # Build picks argument
+        picks_arg = None
+        try:
+            picks_param = params.get("picks", "eeg")
+            if isinstance(picks_param, str):
+                key = picks_param.strip().lower()
+                if key in (None, "all", "*"):
+                    picks_arg = None
+                elif key == "eeg":
+                    picks_arg = mne.pick_types(good_epochs.info, eeg=True, meg=False, eog=False, ecg=False, stim=False, misc=False, seeg=False, ecog=False)
+                else:
+                    # Treat as channel name pattern
+                    if hasattr(mne, 'pick_channels_regexp'):
+                        picks_arg = mne.pick_channels_regexp(good_epochs.ch_names, picks_param)
+                    else:
+                        picks_arg = mne.pick_channels(good_epochs.ch_names, include=[picks_param], exclude=[])
+            elif isinstance(picks_param, (list, tuple)):
+                picks_arg = mne.pick_channels(good_epochs.ch_names, include=list(picks_param), exclude=[])
+            else:
+                picks_arg = None
+        except Exception:
+            # Fall back silently
+            picks_arg = None
         try:
             ica.fit(
                 good_epochs,
+                picks=picks_arg,
                 decim=params["decim"],
                 reject=None,
             )
@@ -292,8 +317,9 @@ class ICAExtractionStep(BaseStep):
         if save_data and hasattr(ica, 'n_components_'):  # Only save if ICA was successfully fitted
             try:
                 if paths is None:
-                    logging.error("[ICAExtractionStep] Cannot save data: paths object is None")
-                    return data
+                    logging.error("[ICAExtractionStep] Cannot save data: paths object is None; skipping save but continuing.")
+                    # Do not return early; continue to store ICA in info and finish
+                    raise RuntimeError("paths is None for save_data")
                 
                 # Use normalized path handling for Windows compatibility
                 output_dir = os.path.normpath(os.path.dirname(str(paths.get_derivative_path(sub_id, ses_id))))
@@ -413,9 +439,12 @@ class ICAExtractionStep(BaseStep):
             fig = ica.plot_sources(data, show=False)
             all_figs.append(fig)
             
-            # Save the plot to file without closing it
+            # Save the plot to file when it's a Matplotlib Figure
             try:
-                fig.savefig(os.path.join(sources_dir, "sources_all.png"), dpi=300)
+                if hasattr(fig, 'savefig'):
+                    fig.savefig(os.path.join(sources_dir, "sources_all.png"), dpi=300)
+                else:
+                    logging.debug("[ICAExtractionStep] plot_sources returned a browser; skipping savefig.")
             except Exception as e:
                 logging.error(f"[ICAExtractionStep] Error saving source time course plot: {e}")
                 

@@ -81,6 +81,19 @@ class AutoRejectStep(BaseStep):
         store_reject_log = self.params.get("store_reject_log", False)
         save_model = self.params.get("save_model", False)
         model_filename = self.params.get("model_filename", None)
+        # Optional: load previously saved model if requested
+        load_model_flag = self.params.get("load_model", False) or self.params.get("use_saved_model", False)
+        model_path = self.params.get("model_path", None)
+        if load_model_flag and (not model_path):
+            # Try to infer from output_dir + model_filename
+            try:
+                if output_dir and model_filename:
+                    import os
+                    candidate = os.path.join(output_dir, model_filename)
+                    if os.path.exists(candidate):
+                        model_path = candidate
+            except Exception:
+                pass
         
         # Setup for interactive plotting if requested
         if not interactive:
@@ -119,11 +132,30 @@ class AutoRejectStep(BaseStep):
 
         # Initialize and fit AutoReject
         logging.info(f"[AutoRejectStep] Running AutoReject with params: {ar_params}")
-        ar = AutoReject(**ar_params)
-        ar.fit(epochs_tmp)
+        ar = None
+        used_saved_model = False
+        if load_model_flag and model_path:
+            try:
+                ar = self.load_model(model_path)
+                used_saved_model = True
+                logging.info(f"[AutoRejectStep] Loaded AutoReject model from {model_path}")
+            except Exception as e:
+                logging.warning(f"[AutoRejectStep] Failed to load model from {model_path}: {e}. Will fit from scratch.")
+                ar = None
+                used_saved_model = False
+        if ar is None:
+            ar = AutoReject(**ar_params)
+            ar.fit(epochs_tmp)
         
         # Get the reject log for visualization and statistics
-        reject_log = ar.get_reject_log(epochs_tmp)
+        try:
+            reject_log = ar.get_reject_log(epochs_tmp)
+        except Exception as e:
+            # Likely model-data mismatch; refit from scratch
+            logging.warning(f"[AutoRejectStep] get_reject_log failed ({e}); refitting model from scratch.")
+            ar = AutoReject(**ar_params)
+            ar.fit(epochs_tmp)
+            reject_log = ar.get_reject_log(epochs_tmp)
         
         # Apply AutoReject according to mode
         if mode == "fit":
@@ -151,7 +183,13 @@ class AutoRejectStep(BaseStep):
         else:  # fit_transform mode
             logging.info("[AutoRejectStep] Running in 'fit_transform' mode - cleaning the data")
             # Apply AutoReject to clean the data
-            cleaned_data = ar.transform(epochs_tmp)
+            try:
+                cleaned_data = ar.transform(epochs_tmp)
+            except Exception as e:
+                logging.warning(f"[AutoRejectStep] transform failed ({e}); refitting and retrying.")
+                ar = AutoReject(**ar_params)
+                ar.fit(epochs_tmp)
+                cleaned_data = ar.transform(epochs_tmp)
             
             # If input was raw data and we want to return raw data
             if not already_epoched and self.params.get("return_raw", True):
@@ -195,8 +233,8 @@ class AutoRejectStep(BaseStep):
             logging.warning("[AutoRejectStep] VERIFICATION: 'temp' dictionary not found in info")
         
         # Save the AutoReject model state if requested
-        if save_model:
-            self._save_model_state(ar, model_filename, output_dir) #TODO: we need to find anotehr way to save it and load it when we need the state and log
+        if save_model and not used_saved_model:
+            self._save_model_state(ar, model_filename, output_dir)
         
         # Restore original matplotlib backend if needed
         if interactive and original_backend:

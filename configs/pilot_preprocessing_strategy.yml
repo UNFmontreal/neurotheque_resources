@@ -1,5 +1,5 @@
 directory:
-  root: "E:/Yann/neuropipe/"
+  root: "."
   raw_data_dir: "data/raw"
   processed_dir: "data/processed"
   reports_dir: "reports"

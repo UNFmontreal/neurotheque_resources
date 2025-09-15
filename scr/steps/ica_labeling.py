@@ -155,17 +155,75 @@ class ICALabelingStep(BaseStep):
                 ic_labels = self._label_with_iclabel(ica, data, params)
             if ic_labels:
                 labeled_components["iclabel"] = ic_labels
-                thresholds_ic = params["thresholds"]["iclabel"]
-                # Iterate over components (using index checking rather than "in" on list)
-                for idx in range(len(ic_labels["labels"])):
-                    label = ic_labels["labels"][idx]
-                    if label == 'brain':
+                thresholds_ic = params["thresholds"].get("iclabel", {})
+
+                # Robustly extract classes and probabilities across mne-icalabel versions
+                classes = None
+                for k in ("labels_set", "classes", "class_names"):
+                    if isinstance(ic_labels, dict) and k in ic_labels:
+                        classes = ic_labels[k]
+                        break
+                probs = None
+                for k in ("y_pred_proba", "proba", "probabilities", "y_pred_probas"):
+                    if isinstance(ic_labels, dict) and k in ic_labels:
+                        probs = ic_labels[k]
+                        break
+
+                def _canon(lbl: str) -> str:
+                    s = str(lbl).strip().lower().replace('-', ' ').replace('_', ' ')
+                    if 'blink' in s or 'eye' in s:
+                        return 'eye'
+                    if 'muscle' in s:
+                        return 'muscle'
+                    if 'heart' in s or 'ecg' in s or 'cardiac' in s:
+                        return 'heart'
+                    if 'line noise' in s or ('line' in s and 'noise' in s):
+                        return 'line_noise'
+                    if 'channel noise' in s or ('channel' in s and 'noise' in s):
+                        return 'channel_noise'
+                    if 'other' in s:
+                        return 'other'
+                    if 'brain' in s:
+                        return 'brain'
+                    return s.replace(' ', '_')
+
+                # Precompute canonicalized classes mapping if available
+                class_idx_map = {}
+                if classes is not None:
+                    try:
+                        class_idx_map = { _canon(c): i for i, c in enumerate(classes) }
+                    except Exception:
+                        class_idx_map = {}
+
+                labels_list = ic_labels.get("labels", []) if isinstance(ic_labels, dict) else []
+                n_comps = len(labels_list)
+                for idx in range(n_comps):
+                    lbl_raw = labels_list[idx]
+                    lbl = _canon(lbl_raw)
+                    if lbl == 'brain':
                         continue
-                    label_idx = ic_labels["labels_set"].index(label)
-                    label_prob = ic_labels["y_pred_proba"][idx][label_idx]
-                    if label in thresholds_ic and label_prob >= thresholds_ic[label]:
+                    # Determine probability for this label
+                    label_prob = None
+                    if probs is not None:
+                        try:
+                            if class_idx_map and lbl in class_idx_map:
+                                label_prob = float(probs[idx][class_idx_map[lbl]])
+                            else:
+                                # Fallback to the maximum predicted probability
+                                label_prob = float(np.max(probs[idx]))
+                        except Exception:
+                            try:
+                                label_prob = float(np.max(probs[idx]))
+                            except Exception:
+                                label_prob = None
+
+                    thr = thresholds_ic.get(lbl)
+                    # If no explicit threshold for this label, skip decision
+                    if thr is None:
+                        continue
+                    if label_prob is not None and label_prob >= float(thr):
                         all_artifacts.add(idx)
-                        logging.info(f"[ICALabelingStep] Component {idx} classified as '{label}' (prob={label_prob:.2f})")
+                        logging.info(f"[ICALabelingStep] Component {idx} classified as '{lbl_raw}' (prob={label_prob:.2f})")
         
         # Method 2: Correlation.
         if "correlation" in params["methods"]:

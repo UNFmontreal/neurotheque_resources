@@ -30,6 +30,7 @@ from .prepchannels import PrepChannelsStep
 from .splittasks_dynamic import SplitTasksStep
 from .epoching import EpochingStep
 from .triggers import TriggerParsingStep
+from .triggers_mario import MarioEventAlignmentStep
 # If you have specialized steps for analysis:
 try:
     from .triggers_gonogo import GoNoGoTriggerStep
@@ -56,6 +57,7 @@ STEP_REGISTRY.update({
     "AutoSave": AutoSave,
     "EpochingStep": EpochingStep,
     "TriggerParsingStep": TriggerParsingStep,
+    "MarioEventAlignmentStep": MarioEventAlignmentStep,
     "SyntheticRawStep": SyntheticRawStep,
     # If you have them:
     "GoNoGoTriggerStep": GoNoGoTriggerStep,
