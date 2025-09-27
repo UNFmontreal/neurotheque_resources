@@ -31,10 +31,6 @@ Dependencies
 ------------
 - mne, mne-bids, numpy, pandas, stable-retro (imported as 'retro')
 
-Notes
------
-- This script does NOT depend on any private modules. It reuses the logic from your
-  generate_annotations.py and generate_sidecars.py to keep your event semantics identical.
 """
 
 from __future__ import annotations
