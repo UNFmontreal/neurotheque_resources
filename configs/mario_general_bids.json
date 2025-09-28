@@ -1,0 +1,31 @@
+{
+  "bids_root": "../data/mario_eeg/mario_eeg/bids",
+  "dataset_name": "Mario EEG Trigger BIDS",
+  "dataset_authors": [
+    "Neurotheque Team"
+  ],
+  "overwrite_dataset_description": true,
+  "recordings": [
+    {
+      "root": "../data/mario_eeg/mario_eeg/sourcedata/eeg",
+      "subjects": ["01"],
+      "sessions": ["001"],
+      "runs": ["01"],
+      "task": "mario",
+      "line_freq": 60,
+      "overwrite": true,
+      "apply_montage": false,
+      "trigger_rules": {
+        "drop_zero": false,
+        "binary_edges": true,
+        "binary_threshold": 0.5,
+        "value_map": {
+          "2": 1,
+          "0": 0
+        },
+        "trial_type": "frame",
+        "stim_channel": "Trigger"
+      }
+    }
+  ]
+}
