@@ -3,6 +3,8 @@
   "title": "NeuroTheque Pipeline Configuration",
   "type": "object",
   "properties": {
+    "eeg_reference": {"type": ["string", "null"], "description": "Default EEG reference label to set in BIDS sidecar (optional)"},
+    "eeg_ground": {"type": ["string", "null"], "description": "Default EEG ground label to set in BIDS sidecar (optional)"},
     "default_subject": {"type": "string", "description": "Default subject ID (e.g., '01')"},
     "default_session": {"type": "string", "description": "Default session ID (e.g., '001')"},
     "default_run": {"type": "string", "description": "Default run ID (e.g., '01')"},
@@ -50,6 +52,39 @@
     "file_path_pattern": {
       "type": "string",
       "description": "Glob pattern to find files to process in multi-subject mode"
+    },
+    "behavior_events": {
+      "type": "object",
+      "description": "Optional configuration for synchronising behavioral logs with hardware triggers",
+      "properties": {
+        "enabled": {"type": "boolean", "default": false},
+        "path": {"type": "string", "description": "Path to behavioral events TSV"},
+        "onset_column": {"type": "string", "default": "onset"},
+        "duration_column": {"type": "string", "default": "duration"},
+        "trial_type_column": {"type": "string", "default": "trial_type"},
+        "anchor_trial_types": {
+          "type": "array",
+          "items": {"type": "string"}
+        },
+        "sync_method": {
+          "type": "string",
+          "enum": ["next_frame_on", "nearest_frame_on"],
+          "default": "next_frame_on"
+        },
+        "alignment_strategy": {
+          "type": "string",
+          "enum": [
+            "mean_offset",
+            "first_anchor",
+            "linear",
+            "piecewise"
+          ],
+          "default": "mean_offset"
+        },
+        "write_sidecar": {"type": "boolean", "default": true},
+        "output_beh": {"type": "boolean", "default": true}
+      },
+      "additionalProperties": true
     },
     "pipeline": {
       "type": "object",
