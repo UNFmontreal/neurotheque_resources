@@ -18,7 +18,7 @@ import mne
 
 
 from mne_bids import BIDSPath, write_raw_bids, make_dataset_description, update_sidecar_json
-_HAS_MNE_BIDS = True
+
 
 
 CONFIG_ENCODING = "utf-8-sig"
@@ -44,12 +44,15 @@ LEGACY_TO_1020 = {"T3": "T7", "T4": "T8", "T5": "P7", "T6": "P8"}
 _RAW_STIM_NAMES = {"TRIGGER","TRIG","TRG","STIM"}
 
 _RAW_EOG_NAMES = {"EOG"}
+_HAS_MNE_BIDS = True
 
 STIM_NAMES = {name.upper() for name in _RAW_STIM_NAMES}
 EOG_NAMES = {name.upper() for name in _RAW_EOG_NAMES}
 
 DEFAULT_EEG_REFERENCE = "Pz (Common Mode Follower)"
 DEFAULT_EEG_GROUND = "Fpz"
+
+DEFAULT_MANUFACTURER = "Wearable Sensing"
 
 _VENDOR_PREFIX_RE = re.compile(r"^EEG\s+(?:X\d+:)?", flags=re.IGNORECASE)
 _PZ_SUFFIX_RE = re.compile(r"-PZ$", flags=re.IGNORECASE)
@@ -793,19 +796,35 @@ def make_mne_events_and_metadata(
     return events, event_id, event_metadata, extra_desc
 
 
-def maybe_update_eeg_sidecar(bids_path: 'BIDSPath', ref: Optional[str], ground: Optional[str]) -> None:
-    """Optionally set EEGReference/EEGGround in *_eeg.json using mne-bids."""
-    if not _HAS_MNE_BIDS or (ref is None and ground is None):
+def maybe_update_eeg_sidecar(
+    bids_path: "BIDSPath",
+    ref: Optional[str],
+    ground: Optional[str],
+    manufacturer: Optional[str] = DEFAULT_MANUFACTURER,
+) -> None:
+    """Optionally set EEGReference/EEGGround/Manufacturer in *_eeg.json."""
+    if not _HAS_MNE_BIDS:
         return
     entries: Dict[str, Any] = {}
+    if manufacturer:
+        entries["Manufacturer"] = manufacturer
     if ref:
         entries["EEGReference"] = ref
     if ground:
         entries["EEGGround"] = ground
+    if not entries:
+        return
     try:
-        update_sidecar_json(bids_path, entries)  # type: ignore[misc]
+        sidecar_path = bids_path.copy().update(suffix="eeg", extension=".json", datatype="eeg")
+    except Exception as exc:
+        log_warn(f"Failed to prepare EEG sidecar path: {exc}")
+        return
+    try:
+        update_sidecar_json(sidecar_path, entries)  # type: ignore[misc]
     except Exception as exc:
         log_warn(f"Failed to update EEG sidecar fields: {exc}")
+
+
 
 
 def _load_behavior_table(behavior: BehaviorConfig, spec: RecordingSpec) -> Optional[pd.DataFrame]:
