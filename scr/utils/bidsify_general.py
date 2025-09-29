@@ -1,10 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Minimal config-driven EEG BIDS converter.
-
-This streamlined version focuses on the current need: convert Mario (and similar)
-datasets by discovering recordings from a root folder, extracting trigger-channel
- events with simple JSON-configurable rules, and writing BIDS outputs.
+"""EEG BIDS converter for DSI-24.
 """
 
 from __future__ import annotations
@@ -20,62 +16,34 @@ import numpy as np
 import pandas as pd
 import mne
 
-try:
-    from mne_bids import (
-        BIDSPath,
-        write_raw_bids,
-        make_dataset_description,
-        update_sidecar_json,
-    )
-    _HAS_MNE_BIDS = True
-except Exception:  # pragma: no cover
-    BIDSPath = None  # type: ignore[assignment]
-    write_raw_bids = None  # type: ignore[assignment]
-    make_dataset_description = None  # type: ignore[assignment]
-    update_sidecar_json = None  # type: ignore[assignment]
-    _HAS_MNE_BIDS = False
+
+from mne_bids import BIDSPath, write_raw_bids, make_dataset_description, update_sidecar_json
+_HAS_MNE_BIDS = True
+
 
 CONFIG_ENCODING = "utf-8-sig"
-
 
 def _log(prefix: str, message: str) -> None:
     print(f"[{prefix}] {message}")
 
-
 def log_info(message: str) -> None:
     _log("info", message)
-
 
 def log_warn(message: str) -> None:
     _log("warn", message)
 
-
 def log_plan(message: str) -> None:
     _log("plan", message)
 
-
 # ---------------------------------------------------------------------------
-# DSI-24 channel normalization (mirrors Mario implementation)
+# DSI-24 channel normalization
 # ---------------------------------------------------------------------------
 
 LEGACY_TO_1020 = {"T3": "T7", "T4": "T8", "T5": "P7", "T6": "P8"}
 
-_RAW_STIM_NAMES = {
-    "TRIGGER",
-    "TRIG",
-    "TRG",
-    "STATUS",
-    "STI 014",
-    "DIGITAL",
-    "DIGITALIO",
-    "DIN",
-    "EVENT",
-    "EVENTS",
-    "MARKER",
-    "STIM",
-}
+_RAW_STIM_NAMES = {"TRIGGER","TRIG","TRG","STIM"}
 
-_RAW_EOG_NAMES = {"HEOG", "VEOG", "EOG", "EOGL", "EOGR"}
+_RAW_EOG_NAMES = {"EOG"}
 
 STIM_NAMES = {name.upper() for name in _RAW_STIM_NAMES}
 EOG_NAMES = {name.upper() for name in _RAW_EOG_NAMES}
@@ -262,6 +230,9 @@ class RecordingSpec:
     force_channel_types: Dict[str, str] = field(default_factory=dict)
     behavior: Optional['BehaviorConfig'] = None
 
+def _spec_label(spec: RecordingSpec) -> str:
+    return f"{spec.subject}-{spec.session}-{spec.run}"
+
 
 @dataclass
 class PipelineConfig:
@@ -330,6 +301,10 @@ def _as_list(value: Any) -> Optional[List[str]]:
     text = str(value).strip()
     return [text] if text else None
 
+def _as_set(value: Any) -> Optional[set]:
+    items = _as_list(value)
+    return set(items) if items else None
+
 
 def _sanitize_task_label(label: Optional[str]) -> Optional[str]:
     """Make sure task labels match BIDS expectations (lowercase, no hyphens)."""
@@ -339,6 +314,23 @@ def _sanitize_task_label(label: Optional[str]) -> Optional[str]:
     if task.endswith("-eeg"):
         task = task[:-4]
     return task.replace("-", "").strip() or None
+
+def _resolve_path(base_dir: Path, value: Any) -> Path:
+    path = Path(str(value)).expanduser()
+    if not path.is_absolute():
+        path = (base_dir / path).resolve()
+    return path
+
+
+def _coerce_str_list(value: Any) -> Optional[List[str]]:
+    if value is None:
+        return None
+    if isinstance(value, (str, bytes)):
+        return [str(value)]
+    if isinstance(value, Iterable):
+        return [str(item) for item in value]
+    return None
+
 
 
 # ---------------------------------------------------------------------------
@@ -386,22 +378,19 @@ def load_config(config_path: Path) -> PipelineConfig:
 
 
 def _expand_entry(entry: Dict[str, Any], base_dir: Path, idx: int) -> List[RecordingSpec]:
-    """Expand a single ``recordings`` block into one ``RecordingSpec`` per matching file."""
+    """Expand a single `recordings` block into one `RecordingSpec` per matching file."""
     if "root" not in entry:
         raise ValueError(f"Recording block #{idx} missing 'root'.")
 
-    root = Path(entry["root"]).expanduser()
-    if not root.is_absolute():
-        root = (base_dir / root).resolve()
+    root = _resolve_path(base_dir, entry["root"])
     if not root.exists():
         raise FileNotFoundError(f"Recording block #{idx}: path does not exist -> {root}")
 
-    subject_filter = _as_list(entry.get("subjects")) or _as_list(entry.get("subject"))
-    session_filter = _as_list(entry.get("sessions")) or _as_list(entry.get("session"))
-    run_filter = _as_list(entry.get("runs")) or _as_list(entry.get("run"))
+    subject_filter = _as_set(entry.get("subjects") or entry.get("subject"))
+    session_filter = _as_set(entry.get("sessions") or entry.get("session"))
+    run_filter = _as_set(entry.get("runs") or entry.get("run"))
 
-    task_override = entry.get("task")
-    task_override = _sanitize_task_label(task_override) if task_override else None
+    task_override = _sanitize_task_label(entry.get("task"))
 
     line_freq = entry.get("line_freq")
     stim_channel = entry.get("stim_channel")
@@ -409,23 +398,23 @@ def _expand_entry(entry: Dict[str, Any], base_dir: Path, idx: int) -> List[Recor
     apply_montage = bool(entry.get("apply_montage", False))
     trigger_rules = dict(entry.get("trigger_rules", {}))
     force_channel_types = dict(entry.get("force_channel_types", {}))
-    behavior_cfg_raw = entry.get("behavior_events")
-    behavior_spec = _build_behavior_config(behavior_cfg_raw, base_dir, idx)
+    behavior_spec = _build_behavior_config(entry.get("behavior_events"), base_dir, idx)
+
+    def _matches(value: Optional[str], allowed: Optional[set]) -> bool:
+        if value is None:
+            return False
+        return not allowed or value in allowed
 
     specs: List[RecordingSpec] = []
     for raw_file in sorted(_iter_raw_files(root)):
         subject, session, raw_task, run = _parse_entities(raw_file.stem)
-        if subject is None or session is None:
+        if not _matches(subject, subject_filter):
             continue
-        if subject_filter and subject not in subject_filter:
+        if not _matches(session, session_filter):
             continue
-        if session_filter and session not in session_filter:
+        run = run or "01"
+        if not _matches(run, run_filter):
             continue
-        if run is None:
-            run = "01"
-        if run_filter and run not in run_filter:
-            continue
-
         task = task_override or _sanitize_task_label(raw_task) or "task"
         specs.append(
             RecordingSpec(
@@ -449,62 +438,47 @@ def _expand_entry(entry: Dict[str, Any], base_dir: Path, idx: int) -> List[Recor
     return specs
 
 
+
+
 def _build_behavior_config(cfg: Any, base_dir: Path, idx: int) -> Optional[BehaviorConfig]:
     if not cfg:
         return None
     if not isinstance(cfg, dict):
-        log_warn(f"Recording block #{idx}: 'behavior_events' must be a mapping; got {type(cfg).__name__}.")
+        log_warn(
+            f"Recording block #{idx}: 'behavior_events' must be a mapping; got {type(cfg).__name__}."
+        )
         return None
-
-    enabled = bool(cfg.get("enabled", False))
-    if not enabled:
+    if not bool(cfg.get("enabled", False)):
         return None
 
     path_value = cfg.get("path")
     if not path_value:
-        log_warn(f"Recording block #{idx}: 'behavior_events.path' is required when enabled.")
+        log_warn(
+            f"Recording block #{idx}: 'behavior_events.path' is required when enabled."
+        )
         return None
 
-    path = Path(str(path_value)).expanduser()
-    if not path.is_absolute():
-        path = (base_dir / path).resolve()
+    path = _resolve_path(base_dir, path_value)
 
     onset_col = str(cfg.get("onset_column", "onset"))
     duration_col = str(cfg.get("duration_column", "duration"))
     trial_type_col = str(cfg.get("trial_type_column", "trial_type"))
-    anchors = cfg.get("anchor_trial_types")
-    if anchors is not None:
-        if isinstance(anchors, (str, bytes)):
-            anchors = [str(anchors)]
-        elif isinstance(anchors, Iterable):
-            anchors = [str(v) for v in anchors]
-        else:
-            log_warn(
-                f"Recording block #{idx}: 'behavior_events.anchor_trial_types' must be a list or string; got {type(anchors).__name__}."
-            )
-            anchors = None
+
+    anchors_raw = cfg.get("anchor_trial_types")
+    anchors = _coerce_str_list(anchors_raw)
+    if anchors_raw is not None and anchors is None:
+        log_warn(
+            f"Recording block #{idx}: 'behavior_events.anchor_trial_types' must be a string or list."
+        )
 
     sync_method = str(cfg.get("sync_method", "next_frame_on")).lower()
     if sync_method not in {"next_frame_on", "nearest_frame_on"}:
         log_warn(
-            f"Recording block #{idx}: unsupported behavior_events.sync_method={sync_method!r}; falling back to 'next_frame_on'."
+            f"Recording block #{idx}: unsupported behavior_events.sync_method={sync_method!r}; using 'next_frame_on'."
         )
         sync_method = "next_frame_on"
 
-    strategy_raw = cfg.get("alignment_strategy") or cfg.get("drift_strategy")
-    fit_linear_legacy = cfg.get("fit_linear_drift")
-
-    strategy = "mean_offset"
-    if isinstance(strategy_raw, str):
-        strategy = strategy_raw.lower()
-    elif isinstance(strategy_raw, bytes):
-        strategy = strategy_raw.decode().lower()
-    elif strategy_raw is not None:
-        log_warn(
-            f"Recording block #{idx}: 'alignment_strategy' should be a string; got {type(strategy_raw).__name__}."
-        )
-
-    valid_strategies = {
+    strategy_aliases = {
         "mean_offset": "mean_offset",
         "mean": "mean_offset",
         "first_anchor": "first_anchor",
@@ -515,22 +489,33 @@ def _build_behavior_config(cfg: Any, base_dir: Path, idx: int) -> Optional[Behav
         "piecewise_linear": "piecewise",
     }
 
-    if strategy not in valid_strategies:
-        if fit_linear_legacy:
-            strategy = "linear"
-        else:
-            if strategy not in {None, "mean_offset"}:
-                log_warn(
-                    f"Recording block #{idx}: unknown alignment_strategy={strategy!r}; using 'mean_offset'."
-                )
-            strategy = "mean_offset"
-    else:
-        strategy = valid_strategies[strategy]
+    strategy_input = cfg.get("alignment_strategy")
+    if strategy_input is None:
+        strategy_input = cfg.get("drift_strategy")
+    if isinstance(strategy_input, bytes):
+        strategy_input = strategy_input.decode(errors="ignore")
+    if strategy_input is not None and not isinstance(strategy_input, str):
+        log_warn(
+            f"Recording block #{idx}: 'alignment_strategy' should be a string; got {type(strategy_input).__name__}."
+        )
+        strategy_input = None
 
-    if fit_linear_legacy and strategy == "mean_offset":
+    strategy_key = strategy_input.lower() if isinstance(strategy_input, str) else "mean_offset"
+    strategy = strategy_aliases.get(strategy_key, strategy_key)
+
+    fit_linear_legacy = bool(cfg.get("fit_linear_drift"))
+    valid_strategies = {"mean_offset", "first_anchor", "linear", "piecewise"}
+
+    if strategy not in valid_strategies:
+        if strategy_key not in {None, "mean_offset"}:
+            log_warn(
+                f"Recording block #{idx}: unknown alignment_strategy={strategy!r}; using 'mean_offset'."
+            )
+        strategy = "linear" if fit_linear_legacy else "mean_offset"
+    elif fit_linear_legacy and strategy == "mean_offset":
         strategy = "linear"
 
-    behavior_spec = BehaviorConfig(
+    return BehaviorConfig(
         enabled=True,
         source_path=path,
         source_label=str(path_value),
@@ -544,7 +529,6 @@ def _build_behavior_config(cfg: Any, base_dir: Path, idx: int) -> Optional[Behav
         output_beh=bool(cfg.get("output_beh", True)),
     )
 
-    return behavior_spec
 
 
 # ---------------------------------------------------------------------------
@@ -678,43 +662,50 @@ def _binary_edge_samples(
         keep = np.ones_like(edge_values, dtype=bool)
     return edge_indices[keep].astype(int), edge_values[keep].astype(int)
 
+def _extract_trigger_samples(raw: mne.io.BaseRaw, stim: str, spec: RecordingSpec) -> Tuple[np.ndarray, np.ndarray]:
+    rules = spec.trigger_rules
+    binary_edges = bool(rules.get("binary_edges", False))
+    threshold = float(rules.get("binary_threshold", 0.5))
+    direction = str(rules.get("edge_direction", "rise")).lower()
+
+    if binary_edges:
+        try:
+            samples, values = _binary_edge_samples(raw, stim, threshold, direction=direction)
+        except Exception as exc:
+            log_warn(f"binary edge detection failed on {stim}: {exc}")
+        else:
+            if samples.size:
+                return samples, values
+
+    try:
+        events = mne.find_events(
+            raw,
+            stim_channel=stim,
+            shortest_event=1,
+            consecutive=True,
+            verbose=False,
+        )
+    except Exception as exc:
+        log_warn(f"Failed to extract events from {stim}: {exc}")
+        return np.empty(0, dtype=int), np.empty(0, dtype=int)
+
+    if events.size == 0:
+        log_warn(f"No discrete events detected on {stim} for {spec.raw_path.name}.")
+        return np.empty(0, dtype=int), np.empty(0, dtype=int)
+
+    return events[:, 0].astype(int), events[:, 2].astype(int)
+
 
 def extract_trigger_events(raw: mne.io.BaseRaw, spec: RecordingSpec) -> pd.DataFrame:
     """Build an events table for downstream ``write_raw_bids`` consumption."""
-    stim = detect_stim_channel(raw, spec.trigger_rules.get("stim_channel") or spec.stim_channel)
     columns = ["onset", "duration", "trial_type", "value", "sample", "stim_channel"]
+    stim_hint = spec.trigger_rules.get("stim_channel") or spec.stim_channel
+    stim = detect_stim_channel(raw, stim_hint)
     if stim is None:
         log_warn(f"No stimulus channel detected for {spec.raw_path.name}; events.tsv will be empty.")
         return pd.DataFrame(columns=columns)
 
-    binary_edges = bool(spec.trigger_rules.get("binary_edges", False))
-    threshold = float(spec.trigger_rules.get("binary_threshold", 0.5))
-    edge_dir = str(spec.trigger_rules.get("edge_direction", "rise")).lower()
-
-    samples: Optional[np.ndarray] = None
-    values: Optional[np.ndarray] = None
-
-    if binary_edges:
-        try:
-            samples, values = _binary_edge_samples(raw, stim, threshold, direction=edge_dir)
-        except Exception as exc:
-            log_warn(f"binary edge detection failed on {stim}: {exc}")
-            samples = values = None
-
-    if samples is None or values is None:
-        try:
-            events = mne.find_events(raw, stim_channel=stim, shortest_event=1, consecutive=True, verbose=False)
-        except Exception as exc:
-            log_warn(f"Failed to extract events from {stim}: {exc}")
-            return pd.DataFrame(columns=columns)
-
-        if events.size == 0:
-            log_warn(f"No discrete events detected on {stim} for {spec.raw_path.name}.")
-            return pd.DataFrame(columns=columns)
-
-        samples = events[:, 0].astype(int)
-        values = events[:, 2].astype(int)
-
+    samples, values = _extract_trigger_samples(raw, stim, spec)
     if samples.size == 0:
         return pd.DataFrame(columns=columns)
 
@@ -730,7 +721,7 @@ def extract_trigger_events(raw: mne.io.BaseRaw, spec: RecordingSpec) -> pd.DataF
     samples = samples[keep]
     trial_types = _trial_types_from_rules(values, spec.trigger_rules)
 
-    trigger_df = pd.DataFrame(
+    return pd.DataFrame(
         {
             "onset": onsets,
             "duration": np.zeros_like(onsets),
@@ -741,7 +732,7 @@ def extract_trigger_events(raw: mne.io.BaseRaw, spec: RecordingSpec) -> pd.DataF
         },
         columns=columns,
     )
-    return trigger_df
+
 
 def make_mne_events_and_metadata(
     events_df: pd.DataFrame,
@@ -817,21 +808,43 @@ def maybe_update_eeg_sidecar(bids_path: 'BIDSPath', ref: Optional[str], ground: 
         log_warn(f"Failed to update EEG sidecar fields: {exc}")
 
 
+def _load_behavior_table(behavior: BehaviorConfig, spec: RecordingSpec) -> Optional[pd.DataFrame]:
+    if not behavior.source_path.exists():
+        log_warn(
+            f"Behavioral file not found for {_spec_label(spec)}: {behavior.source_path}"
+        )
+        return None
+    try:
+        return pd.read_csv(behavior.source_path, sep="	")
+    except Exception as exc:
+        log_warn(f"Failed to read behavioral events TSV ({behavior.source_path}): {exc}")
+        return None
+
+
+def _get_frame_on_times(trigger_events: pd.DataFrame, spec: RecordingSpec) -> np.ndarray:
+    frame_on = trigger_events[trigger_events["trial_type"] == "frame_on"]
+    if frame_on.empty:
+        log_warn(
+            f"No 'frame_on' events available for {_spec_label(spec)}; cannot align behavioral file."
+        )
+        return np.empty(0, dtype=float)
+    return frame_on["onset"].to_numpy()
+
+
+def _select_anchor_types(trial_types: pd.Series, behavior: BehaviorConfig) -> List[str]:
+    if behavior.anchor_trial_types:
+        anchors = [tt for tt in behavior.anchor_trial_types if tt in trial_types.values]
+    else:
+        anchors = list(dict.fromkeys(trial_types))
+    return anchors
+
 def process_behavioral_events(spec: RecordingSpec, trigger_events: pd.DataFrame, bids_path: 'BIDSPath') -> None:
     behavior = spec.behavior
     if behavior is None or not behavior.enabled:
         return
 
-    if not behavior.source_path.exists():
-        log_warn(
-            f"Behavioral file not found for {spec.subject}-{spec.session}-{spec.run}: {behavior.source_path}"
-        )
-        return
-
-    try:
-        beh_df = pd.read_csv(behavior.source_path, sep="\t")
-    except Exception as exc:
-        log_warn(f"Failed to read behavioral events TSV ({behavior.source_path}): {exc}")
+    beh_df = _load_behavior_table(behavior, spec)
+    if beh_df is None:
         return
 
     required = {
@@ -846,11 +859,8 @@ def process_behavioral_events(spec: RecordingSpec, trigger_events: pd.DataFrame,
         )
         return
 
-    frame_on_events = trigger_events[trigger_events["trial_type"] == "frame_on"]
-    if frame_on_events.empty:
-        log_warn(
-            f"No 'frame_on' events available for {spec.subject}-{spec.session}-{spec.run}; cannot align behavioral file."
-        )
+    frame_on_times = _get_frame_on_times(trigger_events, spec)
+    if frame_on_times.size == 0:
         return
 
     beh_df = beh_df.copy()
@@ -863,16 +873,10 @@ def process_behavioral_events(spec: RecordingSpec, trigger_events: pd.DataFrame,
         return
 
     trial_types_series = beh_df[behavior.trial_type_column].astype(str)
-    all_trial_types = list(dict.fromkeys(trial_types_series))
-
-    if behavior.anchor_trial_types:
-        anchor_types = [tt for tt in behavior.anchor_trial_types if tt in trial_types_series.values]
-    else:
-        anchor_types = all_trial_types
-
+    anchor_types = _select_anchor_types(trial_types_series, behavior)
     if not anchor_types:
         log_warn(
-            f"No behavioral anchor trial types available for {spec.subject}-{spec.session}-{spec.run}; skipping alignment."
+            f"No behavioral anchor trial types available for {_spec_label(spec)}; skipping alignment."
         )
         _maybe_write_behavior_copy(behavior, beh_df, beh_df, bids_path, None, corrected=False)
         return
@@ -880,27 +884,24 @@ def process_behavioral_events(spec: RecordingSpec, trigger_events: pd.DataFrame,
     anchors_df = beh_df[trial_types_series.isin(anchor_types)].copy()
     if anchors_df.empty:
         log_warn(
-            f"Behavioral anchors (trial_types={anchor_types}) not present for {spec.subject}-{spec.session}-{spec.run}."
+            f"Behavioral anchors (trial_types={anchor_types}) not present for {_spec_label(spec)}."
         )
         _maybe_write_behavior_copy(behavior, beh_df, beh_df, bids_path, None, corrected=False)
         return
 
-    frame_on_times = frame_on_events["onset"].to_numpy()
     align_records = _align_anchors_to_frames(
         anchors_df,
         behavior,
         frame_on_times,
     )
-
     if not align_records:
         log_warn(
-            f"Failed to align behavioral anchors to frame_on events for {spec.subject}-{spec.session}-{spec.run}."
+            f"Failed to align behavioral anchors to frame_on events for {_spec_label(spec)}."
         )
         _maybe_write_behavior_copy(behavior, beh_df, beh_df, bids_path, None, corrected=False)
         return
 
     drift_info = _estimate_behavior_drift(align_records, behavior)
-
     corrected_df = beh_df.copy()
     corrected_df[behavior.onset_column] = _apply_behavior_correction(
         beh_df[behavior.onset_column].to_numpy(),
@@ -909,6 +910,7 @@ def process_behavioral_events(spec: RecordingSpec, trigger_events: pd.DataFrame,
 
     _log_behavior_summary(spec, behavior, align_records, drift_info)
     _maybe_write_behavior_copy(behavior, beh_df, corrected_df, bids_path, drift_info, corrected=True)
+
 
 
 def _align_anchors_to_frames(
@@ -1007,6 +1009,67 @@ def _estimate_behavior_drift(
     }
 
 
+def _build_linear_model(onsets: np.ndarray, deltas: np.ndarray) -> Optional[Dict[str, Any]]:
+    if onsets.size < 2:
+        return None
+    reference = float(onsets.mean())
+    centered = onsets - reference
+    try:
+        slope, intercept = np.polyfit(centered, deltas, 1)
+    except Exception as exc:
+        log_warn(f"Linear drift fit failed ({exc}); reverting to mean offset.")
+        return None
+    return {
+        "type": "linear",
+        "offset": float(intercept),
+        "slope": float(slope),
+        "reference": reference,
+    }
+
+
+def _build_piecewise_model(align_records_sorted: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+    if len(align_records_sorted) < 2:
+        return None
+
+    segments: List[Dict[str, float]] = []
+    for current, nxt in zip(align_records_sorted, align_records_sorted[1:]):
+        b_start = float(current["behavior_onset"])
+        b_end = float(nxt["behavior_onset"])
+        f_start = float(current["frame_on_onset"])
+        f_end = float(nxt["frame_on_onset"])
+        slope = 1.0 if b_end == b_start else (f_end - f_start) / (b_end - b_start)
+        intercept = f_start - slope * b_start
+        segments.append(
+            {
+                "behavior_start": b_start,
+                "behavior_end": b_end,
+                "frame_start": f_start,
+                "frame_end": f_end,
+                "slope": slope,
+                "intercept": intercept,
+            }
+        )
+
+    if not segments:
+        return None
+
+    pre = {
+        "slope": segments[0]["slope"],
+        "intercept": segments[0]["intercept"],
+        "behavior_end": segments[0]["behavior_start"],
+    }
+    post = {
+        "slope": segments[-1]["slope"],
+        "intercept": segments[-1]["intercept"],
+        "behavior_start": segments[-1]["behavior_end"],
+    }
+    return {
+        "type": "piecewise",
+        "segments": segments,
+        "pre": pre,
+        "post": post,
+    }
+
 def _compute_behavior_model(strategy: str, align_records_sorted: List[Dict[str, Any]]) -> Dict[str, Any]:
     if not align_records_sorted:
         return {"type": "mean_offset", "offset": 0.0}
@@ -1019,70 +1082,20 @@ def _compute_behavior_model(strategy: str, align_records_sorted: List[Dict[str, 
         return {"type": "first_anchor", "offset": offset}
 
     if strategy == "linear":
-        if align_records_sorted and onsets.size >= 2:
-            reference = float(onsets.mean())
-            centered = onsets - reference
-            try:
-                slope, intercept = np.polyfit(centered, deltas, 1)
-            except Exception as exc:
-                log_warn(f"Linear drift fit failed ({exc}); reverting to mean offset.")
-                offset = float(deltas.mean())
-                return {"type": "mean_offset", "offset": offset}
-            return {
-                "type": "linear",
-                "offset": float(intercept),
-                "slope": float(slope),
-                "reference": reference,
-            }
-        else:
-            offset = float(deltas.mean())
-            return {"type": "mean_offset", "offset": offset}
+        model = _build_linear_model(onsets, deltas)
+        if model is not None:
+            return model
+        offset = float(deltas.mean())
+        return {"type": "mean_offset", "offset": offset}
 
-    if strategy == "piecewise" and len(align_records_sorted) >= 2:
-        segments: List[Dict[str, float]] = []
-        for current, nxt in zip(align_records_sorted, align_records_sorted[1:]):
-            b_start = float(current["behavior_onset"])
-            b_end = float(nxt["behavior_onset"])
-            f_start = float(current["frame_on_onset"])
-            f_end = float(nxt["frame_on_onset"])
-            if b_end == b_start:
-                slope = 1.0
-            else:
-                slope = (f_end - f_start) / (b_end - b_start)
-            intercept = f_start - slope * b_start
-            segments.append(
-                {
-                    "behavior_start": b_start,
-                    "behavior_end": b_end,
-                    "frame_start": f_start,
-                    "frame_end": f_end,
-                    "slope": slope,
-                    "intercept": intercept,
-                }
-            )
-        if not segments:
-            offset = float(deltas.mean())
-            return {"type": "mean_offset", "offset": offset}
-        pre = {
-            "slope": segments[0]["slope"],
-            "intercept": segments[0]["intercept"],
-            "behavior_end": segments[0]["behavior_start"],
-        }
-        post = {
-            "slope": segments[-1]["slope"],
-            "intercept": segments[-1]["intercept"],
-            "behavior_start": segments[-1]["behavior_end"],
-        }
-        return {
-            "type": "piecewise",
-            "segments": segments,
-            "pre": pre,
-            "post": post,
-        }
+    if strategy == "piecewise":
+        model = _build_piecewise_model(align_records_sorted)
+        if model is not None:
+            return model
 
-    # default mean offset
     offset = float(deltas.mean())
     return {"type": "mean_offset", "offset": offset}
+
 
 
 def _apply_behavior_correction(onsets: np.ndarray, drift_info: Dict[str, Any]) -> np.ndarray:
@@ -1235,43 +1248,7 @@ def ensure_dataset_description(root: Path, name: Optional[str], authors: List[st
         pass
 
 
-def process_recording(spec: RecordingSpec, cfg: PipelineConfig, dry_run: bool = False) -> Optional['BIDSPath']:
-    """Convert one recording to BIDS, returning the resulting ``BIDSPath``."""
-    log_plan(
-        f"{spec.raw_path} -> sub-{spec.subject}_ses-{spec.session}_task-{spec.task}_run-{spec.run}"
-    )
-    if dry_run:
-        return None
-    if not _HAS_MNE_BIDS:
-        raise RuntimeError("mne-bids is required to run the conversion. Please install 'mne-bids'.")
-
-    raw = load_raw_file(spec.raw_path)
-    raw = prepare_raw(raw, spec.line_freq, spec.apply_montage, spec.force_channel_types)
-
-    # Extract trigger events and prepare MNE events + metadata
-    trigger_events = extract_trigger_events(raw, spec)
-    events_array, event_id_map, event_metadata, extra_desc = make_mne_events_and_metadata(trigger_events)
-
-    bids_path = BIDSPath(
-        subject=spec.subject,
-        session=spec.session,
-        task=spec.task,
-        run=spec.run,
-        datatype="eeg",
-        root=str(cfg.bids_root),
-    )
-
-    write_kwargs = dict(
-        overwrite=spec.overwrite,
-        allow_preload=True,
-        format="BrainVision",
-        verbose=False,
-    )
-    if events_array.size:
-        write_kwargs["events"] = events_array
-        if event_id_map:
-            write_kwargs["event_id"] = event_id_map
-
+def _write_bids_dataset(raw: mne.io.BaseRaw, bids_path: 'BIDSPath', write_kwargs: Dict[str, Any]) -> None:
     montage = None
     try:
         montage = raw.get_montage()
@@ -1283,11 +1260,11 @@ def process_recording(spec: RecordingSpec, cfg: PipelineConfig, dry_run: bool = 
         except Exception:
             montage = None
 
-    # Avoid mixing MNE annotations into events union when we supply our events
     try:
         raw.set_annotations(None)
     except Exception:
         pass
+
     write_raw_bids(
         raw,
         bids_path,
@@ -1302,11 +1279,48 @@ def process_recording(spec: RecordingSpec, cfg: PipelineConfig, dry_run: bool = 
         except Exception:
             pass
 
-    # Optional: EEGReference/EEGGround from config
+def process_recording(spec: RecordingSpec, cfg: PipelineConfig, dry_run: bool = False) -> Optional['BIDSPath']:
+    """Convert one recording to BIDS, returning the resulting ``BIDSPath``."""
+    log_plan(
+        f"{spec.raw_path} -> sub-{spec.subject}_ses-{spec.session}_task-{spec.task}_run-{spec.run}"
+    )
+    if dry_run:
+        return None
+    if not _HAS_MNE_BIDS:
+        raise RuntimeError("mne-bids is required to run the conversion. Please install 'mne-bids'.")
+
+    raw = load_raw_file(spec.raw_path)
+    raw = prepare_raw(raw, spec.line_freq, spec.apply_montage, spec.force_channel_types)
+
+    trigger_events = extract_trigger_events(raw, spec)
+    events_array, event_id_map, _, _ = make_mne_events_and_metadata(trigger_events)
+
+    bids_path = BIDSPath(
+        subject=spec.subject,
+        session=spec.session,
+        task=spec.task,
+        run=spec.run,
+        datatype="eeg",
+        root=str(cfg.bids_root),
+    )
+
+    write_kwargs: Dict[str, Any] = {
+        "overwrite": spec.overwrite,
+        "allow_preload": True,
+        "format": "BrainVision",
+        "verbose": False,
+    }
+    if events_array.size:
+        write_kwargs["events"] = events_array
+        if event_id_map:
+            write_kwargs["event_id"] = event_id_map
+
+    _write_bids_dataset(raw, bids_path, write_kwargs)
     maybe_update_eeg_sidecar(bids_path, cfg.eeg_reference, cfg.eeg_ground)
     process_behavioral_events(spec, trigger_events, bids_path)
     log_info(f"wrote {bids_path.fpath}")
     return bids_path
+
 
 
 # ---------------------------------------------------------------------------
@@ -1316,7 +1330,7 @@ def process_recording(spec: RecordingSpec, cfg: PipelineConfig, dry_run: bool = 
 
 def build_arg_parser() -> argparse.ArgumentParser:
     """CLI entry point definition for running the converter as a script."""
-    parser = argparse.ArgumentParser(description="Minimal config-based EEG BIDS converter")
+    parser = argparse.ArgumentParser(description="EEG BIDS converter")
     parser.add_argument("--config", required=True, help="Path to JSON configuration file")
     parser.add_argument("--dry-run", action="store_true", help="Plan actions without writing output")
     return parser
