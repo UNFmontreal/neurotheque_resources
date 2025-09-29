@@ -21,12 +21,18 @@ import pandas as pd
 import mne
 
 try:
-    from mne_bids import BIDSPath, write_raw_bids, make_dataset_description
+    from mne_bids import (
+        BIDSPath,
+        write_raw_bids,
+        make_dataset_description,
+        update_sidecar_json,
+    )
     _HAS_MNE_BIDS = True
 except Exception:  # pragma: no cover
     BIDSPath = None  # type: ignore[assignment]
     write_raw_bids = None  # type: ignore[assignment]
     make_dataset_description = None  # type: ignore[assignment]
+    update_sidecar_json = None  # type: ignore[assignment]
     _HAS_MNE_BIDS = False
 
 CONFIG_ENCODING = "utf-8-sig"
@@ -122,7 +128,7 @@ def normalize_dsi_channel_names(raw: mne.io.BaseRaw) -> Dict[str, str]:
     return mapping
 
 
-def set_channel_types(raw: mne.io.BaseRaw) -> Dict[str, str]:
+def set_channel_types(raw: mne.io.BaseRaw, force: Optional[Dict[str, str]] = None) -> Dict[str, str]:
     """Infer DSI-24 channel types (stim, eog, misc...) for BIDS metadata."""
     mapping: Dict[str, str] = {}
     for ch in raw.ch_names:
@@ -138,6 +144,10 @@ def set_channel_types(raw: mne.io.BaseRaw) -> Dict[str, str]:
         elif cu == "CM" or cu.startswith("X"):
             mapping[ch] = "misc"
 
+    if force:
+        for k, v in force.items():
+            if k in raw.ch_names:
+                mapping[k] = v
     if mapping:
         raw.set_channel_types(mapping)
     return mapping
@@ -204,11 +214,15 @@ def apply_standard_montage(raw: mne.io.BaseRaw) -> bool:
         return False
 
 
-def prepare_dsi24_raw(raw: mne.io.BaseRaw, apply_montage: bool = True) -> mne.io.BaseRaw:
+def prepare_dsi24_raw(
+    raw: mne.io.BaseRaw,
+    apply_montage: bool = True,
+    force_types: Optional[Dict[str, str]] = None,
+) -> mne.io.BaseRaw:
     """Run the standard normalization pipeline for DSI-24 EDF recordings."""
     normalize_dsi_channel_names(raw)
     rename_dsi_channels(raw)
-    set_channel_types(raw)
+    set_channel_types(raw, force=force_types)
     _sanitize_channel_units(raw)
 
     try:
@@ -228,7 +242,7 @@ def prepare_dsi24_raw(raw: mne.io.BaseRaw, apply_montage: bool = True) -> mne.io
         apply_standard_montage(raw)
     return raw
 
-ALLOWED_SUFFIXES = {".edf"}
+ALLOWED_SUFFIXES = {".edf", ".bdf"}
 
 
 @dataclass
@@ -244,6 +258,8 @@ class RecordingSpec:
     overwrite: bool = False
     trigger_rules: Dict[str, Any] = field(default_factory=dict)
     apply_montage: bool = False
+    # Optional per-dataset channel type overrides
+    force_channel_types: Dict[str, str] = field(default_factory=dict)
 
 
 @dataclass
@@ -254,6 +270,9 @@ class PipelineConfig:
     dataset_authors: List[str]
     recordings: List[RecordingSpec]
     overwrite_dataset_description: bool = True
+    # Optional EEG hardware metadata to set in sidecar
+    eeg_reference: Optional[str] = None
+    eeg_ground: Optional[str] = None
 
 
 # ---------------------------------------------------------------------------
@@ -345,6 +364,8 @@ def load_config(config_path: Path) -> PipelineConfig:
         dataset_authors=[str(a) for a in data.get("dataset_authors", [])],
         recordings=recordings,
         overwrite_dataset_description=bool(data.get("overwrite_dataset_description", True)),
+        eeg_reference=(data.get("eeg_reference") or None),
+        eeg_ground=(data.get("eeg_ground") or None),
     )
 
 
@@ -371,6 +392,7 @@ def _expand_entry(entry: Dict[str, Any], base_dir: Path, idx: int) -> List[Recor
     overwrite = bool(entry.get("overwrite", False))
     apply_montage = bool(entry.get("apply_montage", False))
     trigger_rules = dict(entry.get("trigger_rules", {}))
+    force_channel_types = dict(entry.get("force_channel_types", {}))
 
     specs: List[RecordingSpec] = []
     for raw_file in sorted(_iter_raw_files(root)):
@@ -399,6 +421,7 @@ def _expand_entry(entry: Dict[str, Any], base_dir: Path, idx: int) -> List[Recor
                 overwrite=overwrite,
                 trigger_rules=trigger_rules,
                 apply_montage=apply_montage,
+                force_channel_types=force_channel_types,
             )
         )
 
@@ -415,24 +438,34 @@ def _expand_entry(entry: Dict[str, Any], base_dir: Path, idx: int) -> List[Recor
 def load_raw_file(raw_path: Path) -> mne.io.BaseRaw:
     """Load a supported raw EEG file into MNE."""
     suffix = raw_path.suffix.lower()
-    if suffix != ".edf":
+    if suffix not in ALLOWED_SUFFIXES:
         raise ValueError(f"Unsupported raw format: {raw_path}")
-    return mne.io.read_raw_edf(str(raw_path), preload=True, verbose=False)
+    if suffix == ".edf":
+        return mne.io.read_raw_edf(str(raw_path), preload=True, verbose=False)
+    if suffix == ".bdf":
+        return mne.io.read_raw_bdf(str(raw_path), preload=True, verbose=False)
+    # Unreachable due to check above
+    raise RuntimeError("Unsupported raw format")
 
 
-def prepare_raw(raw: mne.io.BaseRaw, line_freq: Optional[int], apply_montage: bool) -> mne.io.BaseRaw:
+def prepare_raw(
+    raw: mne.io.BaseRaw,
+    line_freq: Optional[int],
+    apply_montage: bool,
+    force_types: Optional[Dict[str, str]] = None,
+) -> mne.io.BaseRaw:
     """Apply line frequency metadata and DSI-specific cleanups before conversion."""
     if line_freq is not None:
         raw.info["line_freq"] = int(line_freq)
     try:
-        raw = prepare_dsi24_raw(raw, apply_montage=apply_montage)
+        raw = prepare_dsi24_raw(raw, apply_montage=apply_montage, force_types=force_types)
     except Exception as exc:
         log_warn(f"prepare_dsi24_raw failed: {exc}")
         # Fallback: attempt basic normalization steps individually
         try:
             normalize_dsi_channel_names(raw)
             rename_dsi_channels(raw)
-            set_channel_types(raw)
+            set_channel_types(raw, force=force_types)
             _sanitize_channel_units(raw)
         except Exception as sub_exc:
             log_warn(f"DSI-24 fallback normalization failed: {sub_exc}")
@@ -504,6 +537,7 @@ def _binary_edge_samples(
     raw: mne.io.BaseRaw,
     stim_name: str,
     threshold: float,
+    direction: str = "rise",
 ) -> Tuple[np.ndarray, np.ndarray]:
     """Detect transitions in a binary trigger channel based on a voltage threshold."""
     picks = mne.pick_channels(raw.ch_names, include=[stim_name])
@@ -518,26 +552,34 @@ def _binary_edge_samples(
     if edge_indices.size == 0:
         return np.empty(0, dtype=int), np.empty(0, dtype=int)
     edge_values = binary[edge_indices]
-    return edge_indices.astype(int), edge_values.astype(int)
+    # Filter by direction
+    if direction == "rise":
+        keep = edge_values == 1
+    elif direction == "fall":
+        keep = edge_values == 0
+    else:  # both
+        keep = np.ones_like(edge_values, dtype=bool)
+    return edge_indices[keep].astype(int), edge_values[keep].astype(int)
 
 
 def extract_trigger_events(raw: mne.io.BaseRaw, spec: RecordingSpec) -> pd.DataFrame:
     """Build an events table for downstream ``write_raw_bids`` consumption."""
     stim = detect_stim_channel(raw, spec.trigger_rules.get("stim_channel") or spec.stim_channel)
-    columns = ["onset", "duration", "trial_type", "value"]
+    columns = ["onset", "duration", "trial_type", "value", "sample", "stim_channel"]
     if stim is None:
         log_warn(f"No stimulus channel detected for {spec.raw_path.name}; events.tsv will be empty.")
         return pd.DataFrame(columns=columns)
 
     binary_edges = bool(spec.trigger_rules.get("binary_edges", False))
     threshold = float(spec.trigger_rules.get("binary_threshold", 0.5))
+    edge_dir = str(spec.trigger_rules.get("edge_direction", "rise")).lower()
 
     samples: Optional[np.ndarray] = None
     values: Optional[np.ndarray] = None
 
     if binary_edges:
         try:
-            samples, values = _binary_edge_samples(raw, stim, threshold)
+            samples, values = _binary_edge_samples(raw, stim, threshold, direction=edge_dir)
         except Exception as exc:
             log_warn(f"binary edge detection failed on {stim}: {exc}")
             samples = values = None
@@ -584,117 +626,78 @@ def extract_trigger_events(raw: mne.io.BaseRaw, spec: RecordingSpec) -> pd.DataF
     )
     return trigger_df
 
+def make_mne_events_and_metadata(
+    events_df: pd.DataFrame,
+) -> Tuple[np.ndarray, Dict[str, int], pd.DataFrame, Dict[str, str]]:
+    """Return (events_array, event_id_map, event_metadata_df, extra_cols_desc).
 
-def patch_eeg_metadata(bids_path: 'BIDSPath', line_freq: Optional[int]) -> None:
-    """Ensure EEG sidecar JSON has reference, ground, and acquisition metadata."""
-    if not _HAS_MNE_BIDS:
-        return
-    eeg_bp = bids_path.copy().update(suffix="eeg", extension=".json")
-    eeg_json_path = Path(eeg_bp.fpath)
-    if not eeg_json_path.exists():
-        return
+    - events_array: shape (n, 3) with columns [sample, 0, event_code]
+    - event_id_map: {trial_type -> event_code}
+    - event_metadata_df: extra columns to add to events.tsv (not onset/duration/trial_type)
+    - extra_cols_desc: {column_name -> description string} required by mne-bids
+    """
+    if events_df.empty:
+        return (
+            np.empty((0, 3), dtype=int),
+            {},
+            pd.DataFrame(),
+            {},
+        )
 
+    df = events_df.sort_values("sample", kind="stable").reset_index(drop=True)
+
+    unique_tt = list(dict.fromkeys(df["trial_type"].astype(str).tolist()))
+
+    # Build desired code per trial_type using raw TTL values if available, with mapping 0->1 and others unchanged
+    desired_code_by_tt: Dict[str, int] = {}
+    used_codes: set[int] = set()
+    if "value" in df.columns:
+        for tt, raw_val in zip(df["trial_type"].astype(str), df["value" ].astype(int)):
+            if tt in desired_code_by_tt:
+                continue
+            code = int(raw_val)
+            code = 1 if code == 0 else code
+            # Ensure uniqueness across trial_types; if collision, bump to next free positive int
+            if code in used_codes:
+                next_code = max(1, code)
+                while next_code in used_codes:
+                    next_code += 1
+                code = next_code
+            desired_code_by_tt[tt] = code
+            used_codes.add(code)
+
+    # Fallback if no values column or something went wrong
+    if not desired_code_by_tt:
+        for i, tt in enumerate(unique_tt, start=1):
+            desired_code_by_tt[tt] = i
+
+    event_id = {tt: desired_code_by_tt[tt] for tt in unique_tt}
+
+    samples = df["sample"].astype(int).to_numpy()
+    zeros = np.zeros_like(samples, dtype=int)
+    codes = np.array([event_id[str(tt)] for tt in df["trial_type"]], dtype=int)
+    events = np.column_stack([samples, zeros, codes])
+
+    # No extra metadata columns requested; mne-bids will still write trial_type
+    event_metadata = pd.DataFrame(index=df.index)
+    extra_desc: Dict[str, str] = {}
+
+    return events, event_id, event_metadata, extra_desc
+
+
+def maybe_update_eeg_sidecar(bids_path: 'BIDSPath', ref: Optional[str], ground: Optional[str]) -> None:
+    """Optionally set EEGReference/EEGGround in *_eeg.json using mne-bids."""
+    if not _HAS_MNE_BIDS or (ref is None and ground is None):
+        return
+    entries: Dict[str, Any] = {}
+    if ref:
+        entries["EEGReference"] = ref
+    if ground:
+        entries["EEGGround"] = ground
     try:
-        meta = json.loads(eeg_json_path.read_text(encoding="utf-8"))
+        update_sidecar_json(bids_path, entries)  # type: ignore[misc]
     except Exception as exc:
-        log_warn(f"Failed to read EEG sidecar {eeg_json_path}: {exc}")
-        return
-
-    meta["EEGReference"] = DEFAULT_EEG_REFERENCE
-    if DEFAULT_EEG_GROUND:
-        meta.setdefault("EEGGround", DEFAULT_EEG_GROUND)
-    if line_freq is not None:
-        meta["PowerLineFrequency"] = int(line_freq)
-    if "SoftwareFilters" not in meta or meta["SoftwareFilters"] in (None, ""):
-        meta["SoftwareFilters"] = "n/a"
-    meta.setdefault("RecordingType", "continuous")
-    meta.setdefault("Manufacturer", "Wearable Sensing")
-    meta.setdefault("ManufacturersModelName", "DSI-24")
-
-    eeg_json_path.write_text(json.dumps(meta, indent=2), encoding="utf-8")
-
-
-def triggers_to_mne_events(events_df: pd.DataFrame) -> Tuple[np.ndarray, Dict[str, int]]:
-    """Convert the events dataframe into the (N, 3) array expected by MNE."""
-    if events_df.empty:
-        return np.empty((0, 3), dtype=int), {}
-
-    samples = events_df["sample"].to_numpy(int)
-    if samples.ndim != 1:
-        samples = samples.reshape(-1)
-
-    event_id: Dict[str, int] = {}
-    codes: List[int] = []
-    next_code = 1
-
-    values = events_df.get("value")
-    for trial_type, value in zip(events_df["trial_type"], values if values is not None else [None] * len(events_df)):
-        base_label = str(trial_type)
-        if value is not None and not pd.isna(value):
-            try:
-                value_int = int(value)
-                label = f"{base_label}[{value_int}]"
-            except Exception:
-                label = base_label
-        else:
-            label = base_label
-
-        if label not in event_id:
-            event_id[label] = next_code
-            next_code += 1
-        codes.append(event_id[label])
-
-    events = np.column_stack(
-        [
-            samples,
-            np.zeros_like(samples, dtype=int),
-            np.asarray(codes, dtype=int),
-        ]
-    )
-    return events, event_id
-
-
-def ensure_annotation_event_ids(raw: mne.io.BaseRaw, event_id: Dict[str, int]) -> Dict[str, int]:
-    """Extend ``event_id`` so every raw annotation description has a matching code."""
-    annotations = getattr(raw, "annotations", None)
-    if annotations is None or len(annotations) == 0:
-        return event_id
-
-    updated = dict(event_id)
-    used_codes = set(updated.values())
-    next_code = max(used_codes) + 1 if used_codes else 1
-
-    for desc in annotations.description:
-        label = str(desc).strip()
-        if not label or label in updated:
-            continue
-        while next_code in used_codes:
-            next_code += 1
-        updated[label] = next_code
-        used_codes.add(next_code)
-        next_code += 1
-    return updated
-
-
-def write_events_table(bids_path: 'BIDSPath', events_df: pd.DataFrame, trial_type: str) -> None:
-    """Rewrite events.tsv so it follows the simple on/off schema the project expects."""
-    events_path = Path(bids_path.copy().update(suffix="events", extension=".tsv").fpath)
-    if events_df.empty:
-        log_warn(f"No trigger events available for {events_path.name}; leaving existing file untouched.")
-        return
-
-    table = events_df.copy()
-    table["trial_type"] = trial_type
-    table["onset"] = table["onset"].astype(float)
-    table["duration"] = table["duration"].astype(float)
-    table["value"] = table["value"].astype(float).round().astype(int)
-
-    columns = ["onset", "duration", "trial_type", "value"]
-    table = table[[col for col in columns if col in table.columns]]
-
-    events_path.parent.mkdir(parents=True, exist_ok=True)
-    table.to_csv(events_path, sep="\t", index=False, float_format="%.3f")
-    log_info(f"standardized events.tsv at {events_path}")
+        log_warn(f"Failed to update EEG sidecar fields: {exc}")
 
 
 def ensure_dataset_description(root: Path, name: Optional[str], authors: List[str], overwrite: bool) -> None:
@@ -726,11 +729,11 @@ def process_recording(spec: RecordingSpec, cfg: PipelineConfig, dry_run: bool = 
         raise RuntimeError("mne-bids is required to run the conversion. Please install 'mne-bids'.")
 
     raw = load_raw_file(spec.raw_path)
-    raw = prepare_raw(raw, spec.line_freq, spec.apply_montage)
+    raw = prepare_raw(raw, spec.line_freq, spec.apply_montage, spec.force_channel_types)
 
+    # Extract trigger events and prepare MNE events + metadata
     trigger_events = extract_trigger_events(raw, spec)
-    events_array, event_id = triggers_to_mne_events(trigger_events)
-    event_id = ensure_annotation_event_ids(raw, event_id)
+    events_array, event_id_map, event_metadata, extra_desc = make_mne_events_and_metadata(trigger_events)
 
     bids_path = BIDSPath(
         subject=spec.subject,
@@ -749,8 +752,8 @@ def process_recording(spec: RecordingSpec, cfg: PipelineConfig, dry_run: bool = 
     )
     if events_array.size:
         write_kwargs["events"] = events_array
-        if event_id:
-            write_kwargs["event_id"] = event_id
+        if event_id_map:
+            write_kwargs["event_id"] = event_id_map
 
     montage = None
     try:
@@ -763,9 +766,16 @@ def process_recording(spec: RecordingSpec, cfg: PipelineConfig, dry_run: bool = 
         except Exception:
             montage = None
 
+    # Avoid mixing MNE annotations into events union when we supply our events
+    try:
+        raw.set_annotations(None)
+    except Exception:
+        pass
     write_raw_bids(
         raw,
         bids_path,
+        event_metadata=None,
+        extra_columns_descriptions=None,
         **write_kwargs,
     )
 
@@ -775,12 +785,8 @@ def process_recording(spec: RecordingSpec, cfg: PipelineConfig, dry_run: bool = 
         except Exception:
             pass
 
-    patch_eeg_metadata(bids_path, spec.line_freq)
-    write_events_table(
-        bids_path,
-        trigger_events,
-        trial_type=spec.trigger_rules.get("trial_type") or spec.task or "trial",
-    )
+    # Optional: EEGReference/EEGGround from config
+    maybe_update_eeg_sidecar(bids_path, cfg.eeg_reference, cfg.eeg_ground)
     log_info(f"wrote {bids_path.fpath}")
     return bids_path
 
