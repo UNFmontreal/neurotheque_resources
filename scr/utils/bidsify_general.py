@@ -260,6 +260,7 @@ class RecordingSpec:
     apply_montage: bool = False
     # Optional per-dataset channel type overrides
     force_channel_types: Dict[str, str] = field(default_factory=dict)
+    behavior: Optional['BehaviorConfig'] = None
 
 
 @dataclass
@@ -273,6 +274,21 @@ class PipelineConfig:
     # Optional EEG hardware metadata to set in sidecar
     eeg_reference: Optional[str] = None
     eeg_ground: Optional[str] = None
+
+
+@dataclass
+class BehaviorConfig:
+    enabled: bool
+    source_path: Path
+    source_label: str
+    onset_column: str
+    duration_column: str
+    trial_type_column: str
+    anchor_trial_types: Optional[List[str]]
+    sync_method: str
+    alignment_strategy: str
+    write_sidecar: bool
+    output_beh: bool
 
 
 # ---------------------------------------------------------------------------
@@ -393,6 +409,8 @@ def _expand_entry(entry: Dict[str, Any], base_dir: Path, idx: int) -> List[Recor
     apply_montage = bool(entry.get("apply_montage", False))
     trigger_rules = dict(entry.get("trigger_rules", {}))
     force_channel_types = dict(entry.get("force_channel_types", {}))
+    behavior_cfg_raw = entry.get("behavior_events")
+    behavior_spec = _build_behavior_config(behavior_cfg_raw, base_dir, idx)
 
     specs: List[RecordingSpec] = []
     for raw_file in sorted(_iter_raw_files(root)):
@@ -422,12 +440,111 @@ def _expand_entry(entry: Dict[str, Any], base_dir: Path, idx: int) -> List[Recor
                 trigger_rules=trigger_rules,
                 apply_montage=apply_montage,
                 force_channel_types=force_channel_types,
+                behavior=behavior_spec,
             )
         )
 
     if not specs:
         log_warn(f"No recordings matched configuration block #{idx} under {root}")
     return specs
+
+
+def _build_behavior_config(cfg: Any, base_dir: Path, idx: int) -> Optional[BehaviorConfig]:
+    if not cfg:
+        return None
+    if not isinstance(cfg, dict):
+        log_warn(f"Recording block #{idx}: 'behavior_events' must be a mapping; got {type(cfg).__name__}.")
+        return None
+
+    enabled = bool(cfg.get("enabled", False))
+    if not enabled:
+        return None
+
+    path_value = cfg.get("path")
+    if not path_value:
+        log_warn(f"Recording block #{idx}: 'behavior_events.path' is required when enabled.")
+        return None
+
+    path = Path(str(path_value)).expanduser()
+    if not path.is_absolute():
+        path = (base_dir / path).resolve()
+
+    onset_col = str(cfg.get("onset_column", "onset"))
+    duration_col = str(cfg.get("duration_column", "duration"))
+    trial_type_col = str(cfg.get("trial_type_column", "trial_type"))
+    anchors = cfg.get("anchor_trial_types")
+    if anchors is not None:
+        if isinstance(anchors, (str, bytes)):
+            anchors = [str(anchors)]
+        elif isinstance(anchors, Iterable):
+            anchors = [str(v) for v in anchors]
+        else:
+            log_warn(
+                f"Recording block #{idx}: 'behavior_events.anchor_trial_types' must be a list or string; got {type(anchors).__name__}."
+            )
+            anchors = None
+
+    sync_method = str(cfg.get("sync_method", "next_frame_on")).lower()
+    if sync_method not in {"next_frame_on", "nearest_frame_on"}:
+        log_warn(
+            f"Recording block #{idx}: unsupported behavior_events.sync_method={sync_method!r}; falling back to 'next_frame_on'."
+        )
+        sync_method = "next_frame_on"
+
+    strategy_raw = cfg.get("alignment_strategy") or cfg.get("drift_strategy")
+    fit_linear_legacy = cfg.get("fit_linear_drift")
+
+    strategy = "mean_offset"
+    if isinstance(strategy_raw, str):
+        strategy = strategy_raw.lower()
+    elif isinstance(strategy_raw, bytes):
+        strategy = strategy_raw.decode().lower()
+    elif strategy_raw is not None:
+        log_warn(
+            f"Recording block #{idx}: 'alignment_strategy' should be a string; got {type(strategy_raw).__name__}."
+        )
+
+    valid_strategies = {
+        "mean_offset": "mean_offset",
+        "mean": "mean_offset",
+        "first_anchor": "first_anchor",
+        "first": "first_anchor",
+        "linear": "linear",
+        "linear_drift": "linear",
+        "piecewise": "piecewise",
+        "piecewise_linear": "piecewise",
+    }
+
+    if strategy not in valid_strategies:
+        if fit_linear_legacy:
+            strategy = "linear"
+        else:
+            if strategy not in {None, "mean_offset"}:
+                log_warn(
+                    f"Recording block #{idx}: unknown alignment_strategy={strategy!r}; using 'mean_offset'."
+                )
+            strategy = "mean_offset"
+    else:
+        strategy = valid_strategies[strategy]
+
+    if fit_linear_legacy and strategy == "mean_offset":
+        strategy = "linear"
+
+    behavior_spec = BehaviorConfig(
+        enabled=True,
+        source_path=path,
+        source_label=str(path_value),
+        onset_column=onset_col,
+        duration_column=duration_col,
+        trial_type_column=trial_type_col,
+        anchor_trial_types=anchors,
+        sync_method=sync_method,
+        alignment_strategy=strategy,
+        write_sidecar=bool(cfg.get("write_sidecar", True)),
+        output_beh=bool(cfg.get("output_beh", True)),
+    )
+
+    return behavior_spec
 
 
 # ---------------------------------------------------------------------------
@@ -700,6 +817,406 @@ def maybe_update_eeg_sidecar(bids_path: 'BIDSPath', ref: Optional[str], ground: 
         log_warn(f"Failed to update EEG sidecar fields: {exc}")
 
 
+def process_behavioral_events(spec: RecordingSpec, trigger_events: pd.DataFrame, bids_path: 'BIDSPath') -> None:
+    behavior = spec.behavior
+    if behavior is None or not behavior.enabled:
+        return
+
+    if not behavior.source_path.exists():
+        log_warn(
+            f"Behavioral file not found for {spec.subject}-{spec.session}-{spec.run}: {behavior.source_path}"
+        )
+        return
+
+    try:
+        beh_df = pd.read_csv(behavior.source_path, sep="\t")
+    except Exception as exc:
+        log_warn(f"Failed to read behavioral events TSV ({behavior.source_path}): {exc}")
+        return
+
+    required = {
+        behavior.onset_column,
+        behavior.duration_column,
+        behavior.trial_type_column,
+    }
+    missing_cols = [col for col in required if col not in beh_df.columns]
+    if missing_cols:
+        log_warn(
+            f"Behavioral TSV missing required columns {missing_cols} -> {behavior.source_path}; skipping alignment."
+        )
+        return
+
+    frame_on_events = trigger_events[trigger_events["trial_type"] == "frame_on"]
+    if frame_on_events.empty:
+        log_warn(
+            f"No 'frame_on' events available for {spec.subject}-{spec.session}-{spec.run}; cannot align behavioral file."
+        )
+        return
+
+    beh_df = beh_df.copy()
+    try:
+        beh_df[behavior.onset_column] = beh_df[behavior.onset_column].astype(float)
+    except Exception as exc:
+        log_warn(
+            f"Behavioral onset column '{behavior.onset_column}' could not be converted to float: {exc}; skipping."
+        )
+        return
+
+    trial_types_series = beh_df[behavior.trial_type_column].astype(str)
+    all_trial_types = list(dict.fromkeys(trial_types_series))
+
+    if behavior.anchor_trial_types:
+        anchor_types = [tt for tt in behavior.anchor_trial_types if tt in trial_types_series.values]
+    else:
+        anchor_types = all_trial_types
+
+    if not anchor_types:
+        log_warn(
+            f"No behavioral anchor trial types available for {spec.subject}-{spec.session}-{spec.run}; skipping alignment."
+        )
+        _maybe_write_behavior_copy(behavior, beh_df, beh_df, bids_path, None, corrected=False)
+        return
+
+    anchors_df = beh_df[trial_types_series.isin(anchor_types)].copy()
+    if anchors_df.empty:
+        log_warn(
+            f"Behavioral anchors (trial_types={anchor_types}) not present for {spec.subject}-{spec.session}-{spec.run}."
+        )
+        _maybe_write_behavior_copy(behavior, beh_df, beh_df, bids_path, None, corrected=False)
+        return
+
+    frame_on_times = frame_on_events["onset"].to_numpy()
+    align_records = _align_anchors_to_frames(
+        anchors_df,
+        behavior,
+        frame_on_times,
+    )
+
+    if not align_records:
+        log_warn(
+            f"Failed to align behavioral anchors to frame_on events for {spec.subject}-{spec.session}-{spec.run}."
+        )
+        _maybe_write_behavior_copy(behavior, beh_df, beh_df, bids_path, None, corrected=False)
+        return
+
+    drift_info = _estimate_behavior_drift(align_records, behavior)
+
+    corrected_df = beh_df.copy()
+    corrected_df[behavior.onset_column] = _apply_behavior_correction(
+        beh_df[behavior.onset_column].to_numpy(),
+        drift_info,
+    )
+
+    _log_behavior_summary(spec, behavior, align_records, drift_info)
+    _maybe_write_behavior_copy(behavior, beh_df, corrected_df, bids_path, drift_info, corrected=True)
+
+
+def _align_anchors_to_frames(
+    anchors_df: pd.DataFrame,
+    behavior: BehaviorConfig,
+    frame_on_times: np.ndarray,
+) -> List[Dict[str, Any]]:
+    frame_on_times = np.asarray(frame_on_times, dtype=float)
+    if frame_on_times.size == 0:
+        return []
+
+    records: List[Dict[str, Any]] = []
+    for idx, row in anchors_df.iterrows():
+        onset = float(row[behavior.onset_column])
+        trial_type = str(row[behavior.trial_type_column])
+        matched_onset = _find_frame_on_onset(onset, frame_on_times, behavior.sync_method)
+        if matched_onset is None:
+            continue
+        delta = matched_onset - onset
+        records.append(
+            {
+                "index": idx,
+                "trial_type": trial_type,
+                "behavior_onset": onset,
+                "frame_on_onset": float(matched_onset),
+                "delta": float(delta),
+            }
+        )
+    return records
+
+
+def _find_frame_on_onset(
+    onset: float,
+    frame_on_times: np.ndarray,
+    method: str,
+) -> Optional[float]:
+    idx = np.searchsorted(frame_on_times, onset, side="left")
+    if method == "next_frame_on":
+        if idx >= frame_on_times.size:
+            return None
+        return float(frame_on_times[idx])
+
+    # nearest_frame_on
+    candidates: List[Tuple[float, float]] = []
+    if idx < frame_on_times.size:
+        cand = float(frame_on_times[idx])
+        candidates.append((abs(cand - onset), cand))
+    if idx > 0:
+        cand = float(frame_on_times[idx - 1])
+        candidates.append((abs(cand - onset), cand))
+    if not candidates:
+        return None
+    candidates.sort(key=lambda x: x[0])
+    return candidates[0][1]
+
+
+def _estimate_behavior_drift(
+    align_records: List[Dict[str, Any]],
+    behavior: BehaviorConfig,
+) -> Dict[str, Any]:
+    align_records_sorted = sorted(align_records, key=lambda rec: rec["behavior_onset"])
+    deltas = np.array([rec["delta"] for rec in align_records_sorted], dtype=float)
+    onset_vals = np.array([rec["behavior_onset"] for rec in align_records_sorted], dtype=float)
+
+    per_label: Dict[str, Dict[str, Any]] = {}
+    for rec in align_records_sorted:
+        label = rec["trial_type"]
+        stats = per_label.setdefault(label, {"count": 0, "deltas": []})
+        stats["count"] += 1
+        stats["deltas"].append(rec["delta"])
+
+    for label, stats in per_label.items():
+        deltas_arr = np.array(stats["deltas"], dtype=float)
+        stats["mean"] = float(deltas_arr.mean())
+        stats["std"] = float(deltas_arr.std(ddof=1)) if deltas_arr.size > 1 else 0.0
+        stats["min"] = float(deltas_arr.min())
+        stats["max"] = float(deltas_arr.max())
+        del stats["deltas"]
+
+    overall_stats = {
+        "count": int(deltas.size),
+        "mean": float(deltas.mean()),
+        "std": float(deltas.std(ddof=1)) if deltas.size > 1 else 0.0,
+        "min": float(deltas.min()),
+        "max": float(deltas.max()),
+    }
+
+    drift_model = _compute_behavior_model(behavior.alignment_strategy, align_records_sorted)
+
+    return {
+        "overall_stats": overall_stats,
+        "per_label": per_label,
+        "model": drift_model,
+        "records": align_records_sorted,
+        "strategy": drift_model["type"],
+    }
+
+
+def _compute_behavior_model(strategy: str, align_records_sorted: List[Dict[str, Any]]) -> Dict[str, Any]:
+    if not align_records_sorted:
+        return {"type": "mean_offset", "offset": 0.0}
+
+    deltas = np.array([rec["delta"] for rec in align_records_sorted], dtype=float)
+    onsets = np.array([rec["behavior_onset"] for rec in align_records_sorted], dtype=float)
+
+    if strategy == "first_anchor":
+        offset = float(align_records_sorted[0]["delta"])
+        return {"type": "first_anchor", "offset": offset}
+
+    if strategy == "linear":
+        if align_records_sorted and onsets.size >= 2:
+            reference = float(onsets.mean())
+            centered = onsets - reference
+            try:
+                slope, intercept = np.polyfit(centered, deltas, 1)
+            except Exception as exc:
+                log_warn(f"Linear drift fit failed ({exc}); reverting to mean offset.")
+                offset = float(deltas.mean())
+                return {"type": "mean_offset", "offset": offset}
+            return {
+                "type": "linear",
+                "offset": float(intercept),
+                "slope": float(slope),
+                "reference": reference,
+            }
+        else:
+            offset = float(deltas.mean())
+            return {"type": "mean_offset", "offset": offset}
+
+    if strategy == "piecewise" and len(align_records_sorted) >= 2:
+        segments: List[Dict[str, float]] = []
+        for current, nxt in zip(align_records_sorted, align_records_sorted[1:]):
+            b_start = float(current["behavior_onset"])
+            b_end = float(nxt["behavior_onset"])
+            f_start = float(current["frame_on_onset"])
+            f_end = float(nxt["frame_on_onset"])
+            if b_end == b_start:
+                slope = 1.0
+            else:
+                slope = (f_end - f_start) / (b_end - b_start)
+            intercept = f_start - slope * b_start
+            segments.append(
+                {
+                    "behavior_start": b_start,
+                    "behavior_end": b_end,
+                    "frame_start": f_start,
+                    "frame_end": f_end,
+                    "slope": slope,
+                    "intercept": intercept,
+                }
+            )
+        if not segments:
+            offset = float(deltas.mean())
+            return {"type": "mean_offset", "offset": offset}
+        pre = {
+            "slope": segments[0]["slope"],
+            "intercept": segments[0]["intercept"],
+            "behavior_end": segments[0]["behavior_start"],
+        }
+        post = {
+            "slope": segments[-1]["slope"],
+            "intercept": segments[-1]["intercept"],
+            "behavior_start": segments[-1]["behavior_end"],
+        }
+        return {
+            "type": "piecewise",
+            "segments": segments,
+            "pre": pre,
+            "post": post,
+        }
+
+    # default mean offset
+    offset = float(deltas.mean())
+    return {"type": "mean_offset", "offset": offset}
+
+
+def _apply_behavior_correction(onsets: np.ndarray, drift_info: Dict[str, Any]) -> np.ndarray:
+    model = drift_info["model"]
+    strategy = model.get("type", "mean_offset")
+    onsets = np.asarray(onsets, dtype=float)
+
+    if strategy == "first_anchor" or strategy == "mean_offset":
+        offset = float(model.get("offset", 0.0))
+        return onsets + offset
+
+    if strategy == "linear":
+        offset = float(model.get("offset", 0.0))
+        slope = float(model.get("slope", 0.0))
+        reference = float(model.get("reference", 0.0))
+        return onsets + offset + slope * (onsets - reference)
+
+    if strategy == "piecewise":
+        segments = model.get("segments", [])
+        if not segments:
+            return onsets
+        behavior_breaks = [seg["behavior_end"] for seg in segments]
+        behavior_starts = [seg["behavior_start"] for seg in segments]
+        pre = model.get("pre", {})
+        post = model.get("post", {})
+
+        corrected = np.empty_like(onsets)
+        for idx, t in enumerate(onsets):
+            if t < behavior_starts[0]:
+                slope = float(pre.get("slope", segments[0]["slope"]))
+                intercept = float(pre.get("intercept", segments[0]["intercept"]))
+            elif t >= behavior_breaks[-1]:
+                slope = float(post.get("slope", segments[-1]["slope"]))
+                intercept = float(post.get("intercept", segments[-1]["intercept"]))
+            else:
+                seg_idx = np.searchsorted(behavior_breaks, t, side="right")
+                seg = segments[min(seg_idx, len(segments) - 1)]
+                slope = seg["slope"]
+                intercept = seg["intercept"]
+            corrected[idx] = slope * t + intercept
+        return corrected
+
+    return onsets
+
+
+def _maybe_write_behavior_copy(
+    behavior: BehaviorConfig,
+    original_df: pd.DataFrame,
+    corrected_df: pd.DataFrame,
+    bids_path: 'BIDSPath',
+    drift_info: Optional[Dict[str, Any]],
+    corrected: bool,
+) -> None:
+    if not behavior.output_beh:
+        return
+
+    beh_bids_path = bids_path.copy().update(datatype="beh", suffix="beh", extension=".tsv")
+    beh_dir = Path(beh_bids_path.directory)
+    beh_dir.mkdir(parents=True, exist_ok=True)
+
+    output_df = corrected_df if corrected else original_df
+    output_df.to_csv(beh_bids_path.fpath, sep="\t", index=False, float_format="%.9f")
+
+    if behavior.write_sidecar:
+        sidecar_path = beh_bids_path.copy().update(extension=".json")
+        payload = _build_behavior_sidecar(behavior, drift_info, bids_path, corrected)
+        Path(sidecar_path.directory).mkdir(parents=True, exist_ok=True)
+        Path(sidecar_path.fpath).write_text(json.dumps(payload, indent=2), encoding="utf-8")
+
+
+def _build_behavior_sidecar(
+    behavior: BehaviorConfig,
+    drift_info: Optional[Dict[str, Any]],
+    bids_path: 'BIDSPath',
+    corrected: bool,
+) -> Dict[str, Any]:
+    relative_eeg_events = None
+    root_path = Path(bids_path.root).resolve() if bids_path.root else None
+    try:
+        eeg_events_path = Path(bids_path.copy().update(suffix="events", extension=".tsv").fpath).resolve()
+        if root_path:
+            relative_eeg_events = str(eeg_events_path.relative_to(root_path))
+        else:
+            relative_eeg_events = str(eeg_events_path)
+    except Exception:
+        relative_eeg_events = str(bids_path.copy().update(suffix="events", extension=".tsv").fpath)
+
+    payload: Dict[str, Any] = {
+        "BehavioralSourceFile": behavior.source_label,
+        "SynchronizationMethod": behavior.sync_method,
+        "AlignmentStrategy": behavior.alignment_strategy,
+        "CorrectionApplied": corrected,
+        "EEGEventsFile": relative_eeg_events,
+    }
+
+    if drift_info:
+        payload["AnchorStatistics"] = drift_info["per_label"]
+        payload["OverallDeltaStatistics"] = drift_info["overall_stats"]
+        payload["DriftModel"] = drift_info["model"]
+        payload["AnchorsCount"] = len(drift_info["records"])
+    else:
+        payload["AnchorStatistics"] = {}
+        payload["OverallDeltaStatistics"] = {}
+        payload["DriftModel"] = {"type": "none"}
+        payload["AnchorsCount"] = 0
+
+    return payload
+
+
+def _log_behavior_summary(
+    spec: RecordingSpec,
+    behavior: BehaviorConfig,
+    align_records: List[Dict[str, Any]],
+    drift_info: Dict[str, Any],
+) -> None:
+    overall = drift_info["overall_stats"]
+    model = drift_info["model"]
+    strategy = drift_info.get("strategy", model.get("type", "mean_offset"))
+    if strategy == "linear":
+        model_desc = (
+            f"linear (offset={model.get('offset', 0.0):.4f}s"
+            f" slope={model.get('slope', 0.0):.6f}s/s)"
+        )
+    elif strategy == "piecewise":
+        segments = model.get("segments", [])
+        model_desc = f"piecewise (segments={len(segments)})"
+    elif strategy == "first_anchor":
+        model_desc = f"first_anchor (offset={model.get('offset', 0.0):.4f}s)"
+    else:
+        model_desc = f"mean_offset (offset={model.get('offset', 0.0):.4f}s)"
+    log_info(
+        "[behavior] "
+        f"sub-{spec.subject}_ses-{spec.session}_run-{spec.run}: anchors={overall['count']} mean_delta={overall['mean']:.4f}s std={overall['std']:.4f}s model={model_desc}"
+    )
 def ensure_dataset_description(root: Path, name: Optional[str], authors: List[str], overwrite: bool) -> None:
     """Create or update the dataset_description.json required by BIDS."""
     if not _HAS_MNE_BIDS:
@@ -787,6 +1304,7 @@ def process_recording(spec: RecordingSpec, cfg: PipelineConfig, dry_run: bool = 
 
     # Optional: EEGReference/EEGGround from config
     maybe_update_eeg_sidecar(bids_path, cfg.eeg_reference, cfg.eeg_ground)
+    process_behavioral_events(spec, trigger_events, bids_path)
     log_info(f"wrote {bids_path.fpath}")
     return bids_path
 

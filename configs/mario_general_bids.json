@@ -18,13 +18,23 @@
       "trigger_rules": {
         "drop_zero": false,
         "binary_edges": true,
+        "edge_direction": "both",
         "binary_threshold": 0.5,
-        "value_map": {
-          "2": 1,
-          "0": 0
+        "value_map": {"0": 1, "1": 2},
+        "trial_type_map": {
+          "1": "frame_off",
+          "2": "frame_on"
         },
-        "trial_type": "frame",
         "stim_channel": "Trigger"
+      },
+      "behavior_events": {
+        "enabled": true,
+        "path": "../data/mario_eeg/mario_eeg/sub-01/ses-001/eeg/sub-01_ses-001_task-mario_run-01_events.tsv",
+        "anchor_trial_types": ["fixation_dot", "gym-retro_game"],
+        "sync_method": "next_frame_on",
+        "alignment_strategy": "piecewise",
+        "write_sidecar": true,
+        "output_beh": true
       }
     }
   ]
