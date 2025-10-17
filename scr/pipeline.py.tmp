@@ -39,7 +39,6 @@ class Pipeline:
     def __init__(self, config_file="configs/pipeline_config.yaml", config_dict=None, validate_config=True):
         self.config = self._load_config(config_file, config_dict, validate=validate_config)
         self.paths = ProjectPaths(self.config)
-        self.data = None
         
         # Set default subject/session from config
         self.default_subject = self.config["default_subject"]

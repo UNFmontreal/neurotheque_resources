@@ -3,13 +3,14 @@
 import logging
 import os
 import sys
-import numpy as np
 import matplotlib.pyplot as plt
+import numpy as np
 from scipy import signal
 import mne
 
 from .base import BaseStep
 from ..utils.mne_utils import clean_mne_object
+from scr.utils.quality_metrics import compute_signal_quality_metrics
 
 
 def _optional_dep_available(modname: str) -> bool:
@@ -318,6 +319,14 @@ class ICALabelingStep(BaseStep):
                 except Exception as e:
                     logging.error(f"[ICALabelingStep] Error saving cleaned data: {e}")
                     logging.error("[ICALabelingStep] Continuing without saving cleaned data")
+            try:
+                metrics = compute_signal_quality_metrics(data_clean)
+                if metrics:
+                    temp = data_clean.info.setdefault("temp", {})
+                    temp.setdefault("signal_metrics", {})["ica_label"] = metrics
+            except Exception as exc:
+                logging.warning(f"[ICALabelingStep] Unable to compute ICA metrics: {exc}")
+
             if 'ipykernel' in sys.modules and self.figures:
                 for fig in self.figures:
                     if fig is not None:
@@ -344,6 +353,15 @@ class ICALabelingStep(BaseStep):
                     if fig is not None:
                         plt.figure(fig.number)
                         plt.show()
+
+            try:
+                metrics = compute_signal_quality_metrics(data)
+                if metrics:
+                    temp = data.info.setdefault("temp", {})
+                    temp.setdefault("signal_metrics", {})["ica_label"] = metrics
+            except Exception as exc:
+                logging.warning(f"[ICALabelingStep] Unable to compute ICA metrics: {exc}")
+
             return data
 
     def _label_with_iclabel(self, ica, data, params):

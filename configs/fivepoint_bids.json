@@ -1,0 +1,89 @@
+{
+  "bids_root": "../data/5pt/bids",
+  "dataset_name": "Five Point EEG (DSI-24)",
+  "dataset_authors": [
+    "CoCo Lab"
+  ],
+  "overwrite_dataset_description": true,
+  "eeg_reference": "Pz (Common Mode Follower)",
+  "eeg_ground": "Fpz",
+  "recordings": [
+    {
+      "root": "../data/5pt/sourcedata",
+      "subjects": [
+        "01",
+        "02",
+        "03"
+      ],
+      "sessions": [
+        "001"
+      ],
+      "runs": [
+        "01"
+      ],
+      "task": "fivepoint",
+      "line_freq": 60,
+      "overwrite": true,
+      "apply_montage": false,
+      "stim_channel": "Trigger",
+      "force_channel_types": {
+        "Trigger": "stim"
+      },
+      "trigger_rules": {
+        "binary_edges": true,
+        "stim_channel": "Trigger",
+        "keep_values": [
+          8
+        ],
+        "ignore_windows": [
+          {
+            "min_s": 0.0,
+            "max_s": 0.08
+          }
+        ],
+        "pulse_width_map": [
+          {
+            "label": "START TASK",
+            "min_s": 1.0,
+            "max_s": 1.3,
+            "code": 14
+          },
+          {
+            "label": "Onset",
+            "min_s": 0.09,
+            "max_s": 0.14,
+            "code": 12
+          },
+          {
+            "label": "FirstStroke",
+            "min_s": 0.18,
+            "max_s": 0.24,
+            "code": 11
+          },
+          {
+            "label": "Retouch_1",
+            "min_s": 0.15,
+            "max_s": 0.18,
+            "code": 16
+          },
+          {
+            "label": "TimeLimitReached",
+            "min_s": 0.26,
+            "max_s": 0.40,
+            "code": 13
+          }
+        ],
+        "label_renames": {
+          "START TASK": "START",
+          "FirstStroke": "first_touch",
+          "Retouch_1": "retouch",
+          "Retouch_2": "retouch",
+          "Retouch_3": "retouch",
+          "Retouch_4": "retouch",
+          "Onset": "onset",
+          "TimeLimitReached": "END"
+        }
+      }
+    }
+  ]
+}

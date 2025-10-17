@@ -1,0 +1,84 @@
+{
+  "bids_root": "../data/text_reading/bids",
+  "dataset_name": "Text Semantic EEG (DSI-24)",
+  "dataset_authors": [
+    "Neurotheque"
+  ],
+  "overwrite_dataset_description": true,
+  "eeg_reference": "Pz (Common Mode Follower)",
+  "eeg_ground": "Fpz",
+  "recordings": [
+    {
+      "root": "../data/text_reading/sourcedata",
+      "subjects": ["01", "02", "03", "04", "05", "06", "07", "08", "10","11","13","14"],
+      "sessions": ["001"],
+      "runs": ["01"],
+      "task": "textsemantic",
+      "line_freq": 60,
+      "overwrite": true,
+      "apply_montage": false,
+      "stim_channel": "Trigger",
+      "force_channel_types": {
+        "Trigger": "stim"
+      },
+      "trigger_rules": {
+        "binary_edges": true,
+        "stim_channel": "Trigger",
+        "keep_values": [8],
+        "binary_threshold": 0.5,
+        "sequence_rules": {
+          "max_gap_s": 0.12,
+          "groups": [
+            {"min_size": 3, "max_size": 4, "label": "sess_start_beep1", "emit": "first", "value": 101, "position": "first"},
+            {"size": 2, "label": "fix_beep1", "emit": "first", "value": 111},
+            {"size": 1, "label": "cw_beep", "value": 121},
+            {"min_size": 3, "max_size": 4, "label": "sess_end_beep1", "emit": "first", "value": 191, "position": "last"}
+          ]
+        },
+        "sequence_aggregate": [
+          {"source": "sess_start_beep1", "rename_to": "START", "value": 1},
+          {"source": "sess_end_beep1", "rename_to": "END", "value": 99},
+          {"source": "fix_beep1", "rename_to": "fixation_anchor", "value": 111}
+        ],
+        "drop_trial_types": [
+          "fixation_anchor",
+          "cw_beep"
+        ],
+        "behavior_derived_events": {
+          "path_template": "../data/text_reading/sourcedata/sub-{subject}_ses-{session}_task-{task}_run-{run}.csv",
+          "stim_channel": "behavior",
+          "anchors": [
+            {"event_label": "START", "column": "sess_start_trig.started"},
+            {"event_label": "END", "column": "sess_end_trig.started"},
+            {"event_label": "fixation_anchor", "column": "fixation.started", "event_index": 0, "behavior_index": 0},
+            {"event_label": "fixation_anchor", "column": "fixation.started", "event_index": -1, "behavior_index": -1}
+          ],
+          "outputs": [
+            {
+              "column": "fixation.started",
+              "label": "fixation",
+              "value": 12,
+              "condition": {"block": ["main"]},
+              "stim_channel": "Trigger"
+            },
+            {
+              "column": "rsvp_word.started",
+              "label_map": {"cong": "cw_cong", "incong": "cw_incong"},
+              "value_map": {"cong": 21, "incong": 22},
+              "condition_column": "cond",
+              "condition": {"block": ["main"]},
+              "stim_channel": "Trigger"
+            },
+            {
+              "column": "comp_question.started",
+              "label": "question",
+              "value": 31,
+              "condition": {"block": ["main"]},
+              "stim_channel": "behavior"
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

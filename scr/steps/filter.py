@@ -1,8 +1,6 @@
 """Filtering step for Raw/Epochs with simple validation and hints."""
 
-from __future__ import annotations
-
-from typing import Iterable, Optional
+from typing import Iterable, Optional, Union
 
 import mne
 
@@ -24,7 +22,7 @@ class FilterStep(BaseStep):
         super().__init__()
         self.params = params or {}
 
-    def run(self, data: mne.io.BaseRaw | mne.Epochs) -> mne.io.BaseRaw | mne.Epochs:
+    def run(self, data: Union[mne.io.BaseRaw, mne.Epochs]) -> Union[mne.io.BaseRaw, mne.Epochs]:
         if data is None:
             raise ValueError("[FilterStep] No data provided to filter.")
 

@@ -2,6 +2,7 @@
 
 from pathlib import Path
 import re
+from typing import Union
 
 class ProjectPaths:
     """
@@ -23,7 +24,7 @@ class ProjectPaths:
         self.reports_dir.mkdir(parents=True, exist_ok=True)
         self.derivatives_dir.mkdir(parents=True, exist_ok=True)
         
-    def _normalize_id(self, identifier: str | int, id_type: str) -> str:
+    def _normalize_id(self, identifier: Union[str, int], id_type: str) -> str:
         """Accept '01' or 'sub-01' and return 'sub-01' (BIDS style)."""
         if identifier is None:
             raise ValueError(f"{id_type} identifier is required")

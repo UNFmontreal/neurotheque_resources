@@ -22,6 +22,7 @@ from .save import SaveData
 from .save_checkpoint import SaveCheckpoint
 from .auto_save import AutoSave
 from .synthetic import SyntheticRawStep
+from .neurotheque_qc_report import NeurothequeQCReportStep
 
 # If you have additional steps:
 from .prepchannels import PrepChannelsStep
@@ -31,6 +32,7 @@ from .splittasks_dynamic import SplitTasksStep
 from .epoching import EpochingStep
 from .triggers import TriggerParsingStep
 from .triggers_mario import MarioEventAlignmentStep
+from .fivepoint_strategy_report import FivePointStrategyReportStep
 # If you have specialized steps for analysis:
 try:
     from .triggers_gonogo import GoNoGoTriggerStep
@@ -59,6 +61,8 @@ STEP_REGISTRY.update({
     "TriggerParsingStep": TriggerParsingStep,
     "MarioEventAlignmentStep": MarioEventAlignmentStep,
     "SyntheticRawStep": SyntheticRawStep,
+    "NeurothequeQCReportStep": NeurothequeQCReportStep,
+    "FivePointStrategyReportStep": FivePointStrategyReportStep,
     # If you have them:
     "GoNoGoTriggerStep": GoNoGoTriggerStep,
     "GoNoGoEpochingStep": GoNoGoEpochingStep,
@@ -89,4 +93,5 @@ __all__ = [
     "SyntheticRawStep",
     "GoNoGoTriggerStep",
     "GoNoGoEpochingStep",
+    "NeurothequeQCReportStep",
 ]

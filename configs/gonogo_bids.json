@@ -1,0 +1,55 @@
+{
+  "bids_root": "../data/gonogo/bids",
+  "dataset_name": "Go/NoGo EEG (DSI-24)",
+  "dataset_authors": [
+    "CoCo Lab"
+  ],
+  "overwrite_dataset_description": true,
+  "eeg_reference": "Pz (Common Mode Follower)",
+  "eeg_ground": "Fpz",
+  "recordings": [
+    {
+      "root": "../data/gonogo/sourcedata/eeg",
+      "subjects": [
+        "01", "02", "03"
+      ],
+      "sessions": [
+        "001"
+      ],
+      "runs": [
+        "01"
+      ],
+      "task": "gonogo",
+      "line_freq": 60,
+      "overwrite": true,
+      "apply_montage": false,
+      "stim_channel": "Trigger",
+      "force_channel_types": {
+        "Trigger": "stim"
+      },
+      "trigger_rules": {
+        "drop_zero": true,
+        "binary_edges": false,
+        "keep_values": [
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9
+        ],
+        "trial_type_map": {
+          "3": "task_start",
+          "4": "go_onset",
+          "5": "nogo_onset",
+          "6": "go_correct",
+          "7": "incorrect",
+          "8": "nogo_correct",
+          "9": "task_end"
+        },
+        "stim_channel": "Trigger"
+      }
+    }
+  ]
+}

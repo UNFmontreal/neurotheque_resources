@@ -648,69 +648,139 @@ def _build_powerup_events(repvars, FS=60):
         if val in [9, 12, 13] and ps[idx + 1] != val
     ]
 
-def build_frame_events_from_trigger(raw: BaseRaw, run_events: pd.DataFrame) -> pd.DataFrame:
+def build_frame_events_from_trigger(
+    raw: BaseRaw, run_events: pd.DataFrame
+) -> Tuple[pd.DataFrame, pd.DataFrame]:
     columns = ["onset", "duration", "trial_type", "value", "level", "stim_file", "game_log"]
-    stim_name = find_stim_channel(raw)
-    if stim_name is None:
-        return pd.DataFrame(columns=columns)
-
-    try:
-        picks = mne.pick_channels(raw.ch_names, include=[stim_name])
-        if len(picks) != 1:
-            return pd.DataFrame(columns=columns)
-        stim_data = raw.get_data(picks=picks)[0]
-    except Exception:
-        return pd.DataFrame(columns=columns)
-
-    sfreq = float(raw.info.get("sfreq", 1.0))
-    binary = (stim_data > 0.5).astype(int)
-    edges = np.diff(binary)
-    edge_indices = np.where(edges != 0)[0] + 1  # capture rising and falling edges
-
-    if edge_indices.size == 0 or run_events.empty:
-        return pd.DataFrame(columns=columns)
-
-    windows = [
-        (
-            float(row.get("onset", 0.0)),
-            float(row.get("onset", 0.0)) + float(row.get("duration", 0.0)),
-            str(row.get("level", "n/a")),
-        )
-        for _, row in run_events.iterrows()
+    offset_columns = [
+        "window_index",
+        "onset",
+        "duration",
+        "level",
+        "stim_file",
+        "ttl_first_edge",
+        "ttl_first_sample",
+        "ttl_first_value",
+        "offset_s",
+        "offset_ms",
+        "n_edges",
     ]
+    empty_frame = pd.DataFrame(columns=columns)
+    empty_offsets = pd.DataFrame(columns=offset_columns)
+
+    if run_events is None or run_events.empty:
+        return empty_frame, empty_offsets
+
+    windows = []
+    stim_files = []
+    has_stim_file = 'stim_file' in run_events.columns
+    for _, row in run_events.iterrows():
+        start = float(row.get("onset", 0.0))
+        duration = float(row.get("duration", 0.0))
+        stop = start + duration
+        level = str(row.get("level", "n/a"))
+        if has_stim_file:
+            stim_entry = row.get('stim_file', 'n/a')
+            if pd.isna(stim_entry) or str(stim_entry).strip() == '':
+                stim_entry = 'n/a'
+            else:
+                stim_entry = str(stim_entry)
+        else:
+            stim_entry = 'n/a'
+        windows.append((start, stop, level))
+        stim_files.append(stim_entry)
 
     if not windows:
-        return pd.DataFrame(columns=columns)
+        return empty_frame, empty_offsets
 
+    stim_name = find_stim_channel(raw)
+    sfreq = float(raw.info.get("sfreq", 1.0))
+
+    stim_data = None
+    if stim_name is not None:
+        try:
+            picks = mne.pick_channels(raw.ch_names, include=[stim_name])
+            if len(picks) == 1:
+                stim_data = raw.get_data(picks=picks)[0]
+        except Exception:
+            stim_data = None
+
+    if stim_data is None:
+        binary = np.array([], dtype=int)
+        edge_indices = np.array([], dtype=int)
+    else:
+        binary = (stim_data > 0.5).astype(int)
+        edges = np.diff(binary)
+        edge_indices = np.where(edges != 0)[0] + 1
+
+    onset_values = edge_indices / sfreq if edge_indices.size else np.array([], dtype=float)
     starts = np.array([w[0] for w in windows], dtype=float)
     stops = np.array([w[1] for w in windows], dtype=float)
     levels = np.array([w[2] for w in windows], dtype=object)
 
-    onset_values = edge_indices / sfreq
-    lookup_idx = np.searchsorted(starts, onset_values, side='right') - 1
-    clamped_idx = lookup_idx.clip(0, len(starts) - 1)
-    valid_mask = (
-        (lookup_idx >= 0)
-        & (lookup_idx < len(starts))
-        & (onset_values >= starts[clamped_idx])
-        & (onset_values <= stops[clamped_idx])
-    )
+    if onset_values.size:
+        lookup_idx = np.searchsorted(starts, onset_values, side='right') - 1
+        clamped_idx = lookup_idx.clip(0, len(starts) - 1)
+        valid_mask = (
+            (lookup_idx >= 0)
+            & (lookup_idx < len(starts))
+            & (onset_values >= starts[clamped_idx])
+            & (onset_values <= stops[clamped_idx])
+        )
+        selected_indices = lookup_idx[valid_mask]
+    else:
+        lookup_idx = np.array([], dtype=int)
+        valid_mask = np.array([], dtype=bool)
+        selected_indices = np.array([], dtype=int)
 
-    if not np.any(valid_mask):
-        return pd.DataFrame(columns=columns)
-
-    selected_indices = lookup_idx[valid_mask]
     frame_rows = pd.DataFrame({
-        "onset": onset_values[valid_mask],
+        "onset": onset_values[valid_mask] if valid_mask.size else np.array([], dtype=float),
         "duration": 0.0,
         "trial_type": "frame",
-        "value": binary[edge_indices[valid_mask]].astype(int),
-        "level": levels[selected_indices],
+        "value": binary[edge_indices[valid_mask]].astype(int) if valid_mask.size else np.array([], dtype=int),
+        "level": levels[selected_indices] if selected_indices.size else np.array([], dtype=object),
         "stim_file": "n/a",
         "game_log": "n/a",
     }, columns=columns)
 
-    return frame_rows
+    ttl_values = binary[edge_indices] if edge_indices.size else np.array([], dtype=int)
+    offset_rows = []
+    for idx, (start, stop, level, stim_entry) in enumerate(zip(starts, stops, levels, stim_files)):
+        if onset_values.size:
+            window_mask = (onset_values >= start) & (onset_values <= stop)
+            n_edges = int(window_mask.sum())
+        else:
+            window_mask = np.array([], dtype=bool)
+            n_edges = 0
+        if n_edges:
+            first_pos = int(np.flatnonzero(window_mask)[0])
+            first_time = float(onset_values[first_pos])
+            first_sample = float(edge_indices[first_pos])
+            first_value = float(ttl_values[first_pos]) if ttl_values.size else np.nan
+            offset_s = first_time - start
+            offset_ms = offset_s * 1000.0
+        else:
+            first_time = np.nan
+            first_sample = np.nan
+            first_value = np.nan
+            offset_s = np.nan
+            offset_ms = np.nan
+        offset_rows.append({
+            "window_index": idx,
+            "onset": start,
+            "duration": float(stop - start),
+            "level": level,
+            "stim_file": stim_entry,
+            "ttl_first_edge": first_time,
+            "ttl_first_sample": first_sample,
+            "ttl_first_value": first_value,
+            "offset_s": offset_s,
+            "offset_ms": offset_ms,
+            "n_edges": n_edges,
+        })
+
+    offsets_df = pd.DataFrame(offset_rows, columns=offset_columns)
+    return frame_rows, offsets_df
 
 
 
@@ -925,6 +995,34 @@ def copy_bk2_and_write_events_copy(
 
 
 
+def _write_ttl_offsets_report(
+    output_dir: Path,
+    subject: str,
+    session: str,
+    task: str,
+    run: str,
+    offsets_df: pd.DataFrame,
+) -> Optional[Path]:
+    """Persist per-repetition TTL alignment offsets for audit/analysis."""
+    if offsets_df is None or offsets_df.empty:
+        return None
+
+    try:
+        output_dir.mkdir(parents=True, exist_ok=True)
+    except Exception:
+        return None
+
+    out_path = output_dir / (
+        f"sub-{subject}_ses-{session}_task-{task}_run-{run}_desc-ttl_offsets.tsv"
+    )
+    try:
+        offsets_df.to_csv(out_path, sep='	', index=False, float_format='%.6f')
+    except Exception:
+        return None
+    return out_path
+
+
+
 def write_bids_run_from_annotated(
     edf_path: Path,
     mario_annotated_tsv: Path,
@@ -936,12 +1034,12 @@ def write_bids_run_from_annotated(
     line_freq: int = 60,
     overwrite: bool = True,
     run_events: Optional[pd.DataFrame] = None,
-) -> Tuple["BIDSPath", pd.DataFrame]:
+) -> Tuple["BIDSPath", pd.DataFrame, pd.DataFrame]:
     raw = mne.io.read_raw_edf(str(edf_path), preload=True, verbose=False)
     raw.info["line_freq"] = int(line_freq)
     prepare_dsi24_raw(raw, apply_montage=True)
 
-    df = pd.read_csv(mario_annotated_tsv, sep='	')
+    df = pd.read_csv(mario_annotated_tsv, sep='\t')
     df.columns = [c.lower() for c in df.columns]
     required = {"onset", "duration", "trial_type"}
     if not required.issubset(set(df.columns)):
@@ -949,9 +1047,11 @@ def write_bids_run_from_annotated(
     raw.set_annotations(events_to_annotations(raw, df))
 
     if run_events is None:
-        run_events = df[df['trial_type'] == 'gym-retro_game'][['onset', 'duration', 'level']].copy()
+        run_events = df[df['trial_type'] == 'gym-retro_game'].copy()
+    if 'level' in run_events.columns:
         run_events['level'] = run_events['level'].astype(str)
-    frame_events = build_frame_events_from_trigger(raw, run_events)
+
+    frame_events, ttl_offsets = build_frame_events_from_trigger(raw, run_events)
 
     bids_path = BIDSPath(subject=subject, session=session, task=task, run=run, datatype="eeg", root=str(bids_root))
     write_raw_bids(raw, bids_path, overwrite=overwrite, allow_preload=True, format="BrainVision", verbose=False)
@@ -965,7 +1065,11 @@ def write_bids_run_from_annotated(
     )
     _replace_coordsystem_with_template(bids_path)
     _patch_channel_units(bids_path)
-    return bids_path, frame_events
+    return bids_path, frame_events, ttl_offsets
+
+
+
+
 
 
 
@@ -1423,9 +1527,10 @@ def mario_bidsify_all_in_one(
             run_events_df['level'] = 'n/a'
         run_events_df['value'] = 'n/a'
 
-        trigger_windows = run_events_df[['onset', 'duration', 'level']].copy()
+        trigger_cols = [col for col in ('onset', 'duration', 'level', 'stim_file') if col in run_events_df.columns]
+        trigger_windows = run_events_df[trigger_cols].copy()
 
-        bids_path, frame_events = write_bids_run_from_annotated(
+        bids_path, frame_events, ttl_offsets_df = write_bids_run_from_annotated(
             edf_path=ctx.edf_path,
             mario_annotated_tsv=annotated_path,
             bids_root=bids_root,
@@ -1438,6 +1543,17 @@ def mario_bidsify_all_in_one(
             run_events=trigger_windows,
         )
         written_paths.append(bids_path)
+
+        ttl_offsets_path = _write_ttl_offsets_report(
+            output_dir=annotated_dir,
+            subject=ctx.subject,
+            session=ctx.session,
+            task=task_label,
+            run=ctx.run,
+            offsets_df=ttl_offsets_df,
+        )
+        if ttl_offsets_path is not None:
+            print(f"  - ttl offsets recorded: {ttl_offsets_path.name}")
 
         combined_events = run_events_df[['onset', 'duration', 'trial_type', 'value', 'level', 'stim_file']].copy()
         combined_events['game_log'] = 'n/a'

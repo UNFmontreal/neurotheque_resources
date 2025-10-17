@@ -7,9 +7,12 @@ from .base import BaseStep
 import json
 import os
 import pickle
+from pathlib import Path
+
 import matplotlib.pyplot as plt
 import numpy as np
 import matplotlib
+from scr.utils.quality_metrics import compute_signal_quality_metrics
 
 class AutoRejectStep(BaseStep):
     """
@@ -81,6 +84,21 @@ class AutoRejectStep(BaseStep):
         store_reject_log = self.params.get("store_reject_log", False)
         save_model = self.params.get("save_model", False)
         model_filename = self.params.get("model_filename", None)
+        epoch_duration = float(self.params.get("epoch_duration", 1.0))
+        epoch_overlap = float(self.params.get("epoch_overlap", 0.0))
+        result_key = self.params.get("result_key", "autoreject")
+
+        if not isinstance(result_key, str) or not result_key.strip():
+            result_key = "autoreject"
+        result_key = result_key.strip()
+
+        if epoch_duration <= 0:
+            raise ValueError("[AutoRejectStep] 'epoch_duration' must be positive.")
+        if epoch_overlap < 0:
+            raise ValueError("[AutoRejectStep] 'epoch_overlap' must be non-negative.")
+        if epoch_overlap >= epoch_duration:
+            raise ValueError("[AutoRejectStep] 'epoch_overlap' must be smaller than 'epoch_duration'.")
+
         # Optional: load previously saved model if requested
         load_model_flag = self.params.get("load_model", False) or self.params.get("use_saved_model", False)
         model_path = self.params.get("model_path", None)
@@ -116,18 +134,18 @@ class AutoRejectStep(BaseStep):
             already_epoched = True
             events_tmp = None  # We don't need events for pre-epoched data
         else:
-            # Create temporary epochs for autoreject
-            logging.info("[AutoRejectStep] Creating 1-second epochs for AR fitting.")
-            events_tmp = mne.make_fixed_length_events(data, duration=1)
-            epochs_tmp = mne.Epochs(
-                data,
-                events_tmp,
-                tmin=0,
-                tmax=1,
-                baseline=None,
-                detrend=0,
-                preload=True
+            # Create temporary epochs for autoreject that mirror the notebook configuration
+            logging.info(
+                "[AutoRejectStep] Creating fixed-length epochs for AR fitting "
+                f"(duration={epoch_duration}s, overlap={epoch_overlap}s)."
             )
+            epochs_tmp = mne.make_fixed_length_epochs(
+                data,
+                duration=epoch_duration,
+                overlap=epoch_overlap,
+                preload=True,
+            )
+            events_tmp = epochs_tmp.events
             already_epoched = False
 
         # Initialize and fit AutoReject
@@ -179,7 +197,7 @@ class AutoRejectStep(BaseStep):
             else:
                 # Convert reject log to annotations and apply to raw data
                 cleaned_data = data.copy()
-                self._add_reject_log_as_annotations(cleaned_data, reject_log, events_tmp)
+                self._add_reject_log_as_annotations(cleaned_data, reject_log, events_tmp, epoch_duration)
         else:  # fit_transform mode
             logging.info("[AutoRejectStep] Running in 'fit_transform' mode - cleaning the data")
             # Apply AutoReject to clean the data
@@ -195,13 +213,13 @@ class AutoRejectStep(BaseStep):
             if not already_epoched and self.params.get("return_raw", True):
                 logging.info("[AutoRejectStep] Converting cleaned epochs back to raw data.")
                 # Convert cleaned epochs back to raw
-                raw_data = epochs_tmp.get_data()
+                raw_data = cleaned_data.get_data()
                 cleaned_raw = mne.io.RawArray(
-                    raw_data.transpose((1, 0, 2)).reshape(len(epochs_tmp.ch_names), -1),
-                    epochs_tmp.info
+                    raw_data.transpose((1, 0, 2)).reshape(len(cleaned_data.ch_names), -1),
+                    cleaned_data.info
                 )
                 # Add annotations for bad epochs
-                self._add_reject_log_as_annotations(cleaned_raw, reject_log, events_tmp)
+                self._add_reject_log_as_annotations(cleaned_raw, reject_log, events_tmp, epoch_duration)
                 cleaned_data = cleaned_raw
         
         # Log statistics about rejected epochs
@@ -221,7 +239,17 @@ class AutoRejectStep(BaseStep):
         
         # Store reject_log in data.info["temp"] if requested
         if store_reject_log:
-            self._store_reject_log_in_info(cleaned_data, reject_log, epochs_tmp, ar)
+            self._store_reject_log_in_info(cleaned_data, reject_log, epochs_tmp, ar, result_key)
+
+        # Store lightweight quality metrics for downstream reporting
+        try:
+            metrics = compute_signal_quality_metrics(cleaned_data)
+            if metrics:
+                temp = cleaned_data.info.setdefault("temp", {})
+                stage_metrics = temp.setdefault("signal_metrics", {})
+                stage_metrics[result_key] = metrics
+        except Exception as exc:  # pragma: no cover - defensive
+            logging.warning(f"[AutoRejectStep] Unable to compute quality metrics for {result_key}: {exc}")
             
         # Debug: Verify temp dict exists after processing
         if 'temp' in cleaned_data.info:
@@ -249,7 +277,7 @@ class AutoRejectStep(BaseStep):
         # Return the annotated/cleaned data
         return cleaned_data
     
-    def _add_reject_log_as_annotations(self, raw, reject_log, events):
+    def _add_reject_log_as_annotations(self, raw, reject_log, events, epoch_duration):
         """
         Convert AutoReject rejection log to MNE Annotations and add them to the raw data.
         """
@@ -276,7 +304,7 @@ class AutoRejectStep(BaseStep):
             if is_bad:
                 # Get epoch onset and duration in seconds
                 onset = events[i, 0] / sfreq
-                duration = 1.0  # Since we created 1-second epochs
+                duration = float(epoch_duration)
                 
                 # Add to lists
                 onsets.append(onset)
@@ -312,297 +340,252 @@ class AutoRejectStep(BaseStep):
             Whether to show plots interactively
         """
         try:
-            # Get basic statistics
+            result_key = self.params.get("result_key", "autoreject")
+            sub_id = self.params.get("subject_id", "01")
+            ses_id = self.params.get("session_id", "001")
+            task_id = self.params.get("task_id")
+            run_id = self.params.get("run_id")
+
+            # Basic statistics
             bad_epochs = reject_log.bad_epochs
             n_epochs = len(bad_epochs)
-            n_bad_epochs = np.sum(bad_epochs)
-            bad_epoch_percent = (n_bad_epochs / n_epochs) * 100
-            
+            n_bad_epochs = int(np.sum(bad_epochs))
+            bad_epoch_percent = (n_bad_epochs / n_epochs) * 100 if n_epochs else 0.0
+
             # Determine output directory
             if plot_dir is None:
-                sub_id = getattr(self.params, "subject_id", "01")
-                ses_id = getattr(self.params, "session_id", "001")
-                plot_dir = f"./data/processed/sub-{sub_id}/ses-{ses_id}/figures/autoreject"
-            
-            os.makedirs(plot_dir, exist_ok=True)
-            
-            # Create figure
+                paths_obj = self.params.get("paths")
+                if paths_obj:
+                    plot_dir = Path(
+                        paths_obj.get_report_path("autoreject", sub_id, ses_id, task_id, run_id)
+                    ) / result_key
+                else:
+                    base = Path(f"./data/processed/sub-{sub_id}/ses-{ses_id}/figures/autoreject")
+                    if task_id:
+                        base = base / f"task-{task_id}"
+                    if run_id:
+                        base = base / f"run-{run_id}"
+                    plot_dir = base / result_key
+            plot_dir = Path(plot_dir)
+            plot_dir.mkdir(parents=True, exist_ok=True)
+
+            # Figure: epoch rejection markers
             plt.figure(figsize=(10, 6))
-            plt.title(f'AutoReject Results: {bad_epoch_percent:.1f}% of epochs marked bad')
-            
-            # Create bar plot showing bad epochs (1=bad, 0=good)
-            plt.bar(range(n_epochs), [1 if x else 0 for x in bad_epochs], color='r', alpha=0.7)
-            plt.xlabel('Epoch Index')
-            plt.ylabel('Rejected (1=bad, 0=good)')
+            plt.title(f"AutoReject Results ({result_key}): {bad_epoch_percent:.1f}% epochs flagged")
+            plt.bar(range(n_epochs), [1 if x else 0 for x in bad_epochs], color="r", alpha=0.7)
+            plt.xlabel("Epoch Index")
+            plt.ylabel("Rejected (1=bad, 0=good)")
             plt.ylim(-0.1, 1.1)
-            
-            # Add text with summary statistics
             stats_text = f"Total: {n_epochs} epochs\nBad: {n_bad_epochs} epochs ({bad_epoch_percent:.1f}%)"
-            plt.figtext(0.02, 0.02, stats_text, fontsize=12,
-                       bbox=dict(facecolor='white', alpha=0.9))
-            
-            # Show the plot interactively if requested
+            plt.figtext(0.02, 0.02, stats_text, fontsize=12, bbox=dict(facecolor="white", alpha=0.9))
+
             if interactive:
                 plt.show()
-            
-            # Save the plot
-            sub_id = getattr(self.params, "subject_id", "unknown")
-            ses_id = getattr(self.params, "session_id", "unknown")
-            run_id = getattr(self.params, "run_id", "01")
-            plt.savefig(os.path.join(plot_dir, f"autoreject_{sub_id}_{ses_id}_run-{run_id}_epochs.png"), dpi=150)
-            
-            # Only close the plot if not in interactive mode
+
+            epochs_file = plot_dir / f"{result_key}_autoreject_{sub_id}_{ses_id}_run-{run_id}_epochs.png"
+            plt.savefig(str(epochs_file), dpi=150)
             if not interactive:
                 plt.close()
-            
-            # If ar object is provided, plot additional information
-            if ar is not None and hasattr(ar, 'threshes_'):
+
+            # Threshold visualization if available
+            if ar is not None and hasattr(ar, "threshes_"):
                 try:
-                    # Create a second figure for thresholds
-                    plt.figure(figsize=(12, 8))
-                    plt.title('AutoReject Channel Thresholds')
-                    
-                    # Plot thresholds for each channel - with better error handling
                     ch_names = raw.ch_names
-                    ch_thresholds = []
-                    
-                    if ar.threshes_ is None:
-                        # If threshes_ is None, show a message and skip this plot
-                        logging.warning("[AutoRejectStep] No thresholds available in AutoReject object")
-                        plt.close()
-                        return
-                    
-                    # Extract thresholds for each channel safely
+                    thresholds = []
                     for ch_idx, ch_name in enumerate(ch_names):
-                        try:
-                            if ch_idx < len(ar.threshes_) and ar.threshes_[ch_idx] is not None:
-                                ch_thresholds.append(float(ar.threshes_[ch_idx]))
-                            else:
-                                ch_thresholds.append(0.0)  # Default if no threshold
-                        except (TypeError, IndexError) as e:
-                            logging.warning(f"[AutoRejectStep] Error accessing threshold for channel {ch_name}: {e}")
-                            ch_thresholds.append(0.0)
-                    
-                    # Check if we have any valid thresholds
-                    if not any(ch_thresholds):
-                        logging.warning("[AutoRejectStep] No valid thresholds found for visualization")
+                        if ch_idx < len(ar.threshes_) and ar.threshes_[ch_idx] is not None:
+                            thresholds.append(float(ar.threshes_[ch_idx]))
+                        else:
+                            thresholds.append(0.0)
+
+                    if any(thresholds):
+                        plt.figure(figsize=(12, 8))
+                        plt.title(f"AutoReject Channel Thresholds ({result_key})")
+                        plt.bar(range(len(ch_names)), thresholds, alpha=0.7)
+                        plt.xticks(range(len(ch_names)), ch_names, rotation=90)
+                        plt.xlabel("Channel")
+                        plt.ylabel("Threshold (μV)")
+                        plt.tight_layout()
+                        if interactive:
+                            plt.show()
+                        thresh_file = plot_dir / f"{result_key}_autoreject_{sub_id}_{ses_id}_run-{run_id}_thresholds.png"
+                        plt.savefig(str(thresh_file), dpi=150)
+                        if not interactive:
+                            plt.close()
+                except Exception as exc:
+                    logging.warning(f"[AutoRejectStep] Error creating thresholds visualization: {exc}")
+                    if 'plt' in locals() and plt.get_fignums():
                         plt.close()
-                        return
-                    
-                    # Create bar plot of thresholds
-                    plt.bar(range(len(ch_names)), ch_thresholds, alpha=0.7)
-                    plt.xticks(range(len(ch_names)), ch_names, rotation=90)
-                    plt.xlabel('Channel')
-                    plt.ylabel('Threshold (μV)')
-                    plt.tight_layout()
-                    
-                    # Show the plot interactively if requested
-                    if interactive:
-                        plt.show()
-                    
-                    # Save the plot
-                    plt.savefig(os.path.join(plot_dir, f"autoreject_{sub_id}_{ses_id}_run-{run_id}_thresholds.png"), dpi=150)
-                    
-                    # Only close the plot if not in interactive mode
-                    if not interactive:
-                        plt.close()
-                    
-                except Exception as e:
-                    logging.warning(f"[AutoRejectStep] Error creating thresholds visualization: {e}")
-                    plt.close()  # Make sure we close the figure
-            
-        except Exception as e:
-            logging.warning(f"[AutoRejectStep] Error creating visualization: {e}")
+
+        except Exception as exc:
+            logging.warning(f"[AutoRejectStep] Error creating visualization: {exc}")
             if 'plt' in locals() and plt.get_fignums():
-                plt.close()  # Close any open figures
+                plt.close()
     def _plot_channel_rejection_rates(self, reject_log, raw, plot_dir=None, interactive=False):
         """
-        Creates a detailed visualization of channel-wise rejection rates
-        
-        Parameters
-        ----------
-        reject_log : instance of autoreject.RejectLog
-            The rejection log from AutoReject
-        raw : instance of mne.io.Raw or mne.Epochs
-            The data that was processed
-        plot_dir : str or None
-            Directory to save plots
-        interactive : bool
-            Whether to show plots interactively
+        Create a channel-wise rejection summary, restricted to EEG channels.
         """
         try:
-            # Get channel names
-            ch_names = raw.ch_names
-            
-            # Filter out trigger/stim channels by name or type
-            ch_types = raw.get_channel_types() if hasattr(raw, 'get_channel_types') else []
-            excluded_channels = []
-            
-            # Try to identify trigger channels by name
-            trigger_keywords = ['trigger', 'stim', 'sti', 'event', 'status']
-            
-            # If we have channel types, use that to identify stim channels
-            if ch_types:
-                for idx, (ch_name, ch_type) in enumerate(zip(ch_names, ch_types)):
-                    if ch_type == 'stim' or any(keyword in ch_name.lower() for keyword in trigger_keywords):
-                        excluded_channels.append(ch_name)
+            raw_ch_names = list(raw.ch_names)
+            raw_ch_types = (
+                list(raw.get_channel_types()) if hasattr(raw, "get_channel_types") else ["eeg"] * len(raw_ch_names)
+            )
+            channel_types = dict(zip(raw_ch_names, raw_ch_types))
+
+            if hasattr(reject_log, "ch_names") and reject_log.ch_names is not None and len(reject_log.ch_names):
+                ar_channel_names = [str(ch) for ch in reject_log.ch_names]
             else:
-                # Otherwise, just use name-based detection
-                for ch_name in ch_names:
-                    if any(keyword in ch_name.lower() for keyword in trigger_keywords):
-                        excluded_channels.append(ch_name)
-            
-            # Log which channels we're excluding
-            if excluded_channels:
-                logging.info(f"[AutoRejectStep] Excluding trigger/stim channels from rejection plot: {excluded_channels}")
-            
-            # Calculate rejection rates per channel
-            ch_rejection_rates = {}
-            
-            # Check if we have channel-wise information
-            if hasattr(reject_log, 'labels') and reject_log.labels is not None:
-                # Loop through all epochs and channels
-                for ch_idx, ch_name in enumerate(ch_names):
-                    # Skip excluded channels
-                    if ch_name in excluded_channels:
-                        continue
-                        
-                    # Count rejected instances for this channel
-                    if ch_idx < reject_log.labels.shape[1]:  # Make sure index is valid
-                        # Count epochs where this channel was marked for rejection
-                        # Exclude completely rejected epochs to focus on channel-specific issues
-                        
-                        # Convert arrays to bool type before bitwise operations
-                        ch_labels = reject_log.labels[:, ch_idx].astype(bool)
-                        bad_epochs = reject_log.bad_epochs.astype(bool)
-                        
-                        # Now perform the bitwise operations on boolean arrays
-                        ch_bad_count = np.sum(ch_labels & ~bad_epochs)
-                        total_epochs = len(reject_log.labels)
-                   
-                        # Calculate rejection percentage
-                        if total_epochs > 0:
-                            rejection_rate = (ch_bad_count / total_epochs) * 100
-                        else:
-                            rejection_rate = 0.0
-                            
-                        ch_rejection_rates[ch_name] = rejection_rate
-            
-            # If no channel-wise data, try to use the channel thresholds as a proxy
-            if not ch_rejection_rates and hasattr(reject_log, 'threshes') and reject_log.threshes is not None:
-                for ch_idx, ch_name in enumerate(ch_names):
-                    # Skip excluded channels
-                    if ch_name in excluded_channels:
-                        continue
-                        
-                    # Higher thresholds might indicate more problematic channels
-                    # This is an approximation since we don't have actual rejection counts
+                ar_channel_names = [ch for ch in raw_ch_names if channel_types.get(ch) == "eeg"]
+
+            ar_channel_names = [ch for ch in ar_channel_names if channel_types.get(ch, "eeg") == "eeg"]
+
+            if hasattr(reject_log, "labels") and reject_log.labels is not None:
+                n_cols = reject_log.labels.shape[1]
+                ar_channel_names = ar_channel_names[:n_cols]
+
+            if not ar_channel_names:
+                logging.warning("[AutoRejectStep] No EEG channels found for rejection plot.")
+                return
+
+            trigger_keywords = {"trigger", "stim", "sti", "event", "status"}
+            channel_names = [
+                ch
+                for ch in ar_channel_names
+                if channel_types.get(ch) == "eeg" and not any(keyword in ch.lower() for keyword in trigger_keywords)
+            ]
+
+            if not channel_names:
+                logging.warning("[AutoRejectStep] All channels excluded from rejection plot.")
+                return
+
+            excluded = set(ar_channel_names) - set(channel_names)
+            if excluded:
+                logging.info(
+                    "[AutoRejectStep] Excluding non-EEG/trigger channels from rejection plot: %s",
+                    sorted(excluded),
+                )
+
+            ch_rejection_rates: dict[str, float] = {}
+
+            if hasattr(reject_log, "labels") and reject_log.labels is not None:
+                labels = reject_log.labels.astype(bool)
+                bad_epochs = reject_log.bad_epochs.astype(bool)
+                total_epochs = len(labels)
+                for ch_idx, ch_name in enumerate(channel_names):
+                    if ch_idx >= labels.shape[1]:
+                        break
+                    ch_labels = labels[:, ch_idx]
+                    ch_bad_count = np.sum(ch_labels & ~bad_epochs)
+                    ch_rejection_rates[ch_name] = (ch_bad_count / total_epochs) * 100 if total_epochs > 0 else 0.0
+
+            if not ch_rejection_rates and hasattr(reject_log, "threshes") and reject_log.threshes is not None:
+                valid_threshes = [t for t in reject_log.threshes if t is not None]
+                max_thresh = np.max(valid_threshes) if valid_threshes else 0.0
+                for ch_idx, ch_name in enumerate(channel_names):
                     if ch_idx < len(reject_log.threshes) and reject_log.threshes[ch_idx] is not None:
-                        # Normalize thresholds to a 0-100 scale for visualization
-                        max_thresh = np.max([t for t in reject_log.threshes if t is not None])
-                        norm_thresh = (reject_log.threshes[ch_idx] / max_thresh) * 100 if max_thresh > 0 else 0
-                        ch_rejection_rates[ch_name] = norm_thresh
-            
-            # If we still don't have data, check the AutoReject scores
-            if not ch_rejection_rates and hasattr(reject_log, 'scores') and reject_log.scores is not None:
-                for ch_idx, ch_name in enumerate(ch_names):
-                    # Skip excluded channels
-                    if ch_name in excluded_channels:
-                        continue
-                        
+                        norm = (reject_log.threshes[ch_idx] / max_thresh) * 100 if max_thresh > 0 else 0.0
+                        ch_rejection_rates[ch_name] = norm
+
+            if not ch_rejection_rates and hasattr(reject_log, "scores") and reject_log.scores is not None:
+                for ch_idx, ch_name in enumerate(channel_names):
                     if ch_idx < reject_log.scores.shape[1]:
-                        # Use mean scores as proxy for rejection rate
-                        mean_score = np.mean(reject_log.scores[:, ch_idx]) * 100  # Scale to percentage
-                        ch_rejection_rates[ch_name] = mean_score
-            
-            # If we still don't have channel data, we can't create this plot
+                        ch_rejection_rates[ch_name] = float(np.mean(reject_log.scores[:, ch_idx]) * 100.0)
+
             if not ch_rejection_rates:
                 logging.warning("[AutoRejectStep] No channel-wise rejection data available for visualization")
                 return
-            
-            # Sort channels by rejection rate (highest to lowest)
+
             sorted_channels = sorted(ch_rejection_rates.items(), key=lambda x: x[1], reverse=True)
-            
-            # Create figure
-            plt.figure(figsize=(12, max(8, len(ch_rejection_rates)/3)))  # Adjust height based on channel count
-            
-            # Set up channel names and rejection rates
-            channels = [ch[0] for ch in sorted_channels]
-            rates = [ch[1] for ch in sorted_channels]
-            
-            # Create color map based on rejection rates
-            colors = []
-            for rate in rates:
-                if rate < 20:
-                    colors.append('green')  # Good channels (low rejection)
-                elif rate < 50:
-                    colors.append('yellowgreen')  # Warning channels
-                else:
-                    colors.append('salmon')  # Problematic channels (high rejection)
-            
-            # Create horizontal bar chart
+
+            plt.figure(figsize=(12, max(8, len(sorted_channels) / 3)))
+
+            channels = [name for name, _ in sorted_channels]
+            rates = [rate for _, rate in sorted_channels]
+
+            colors = [
+                "green" if rate < 20 else "yellowgreen" if rate < 50 else "salmon"
+                for rate in rates
+            ]
+
             y_pos = np.arange(len(channels))
-            bars = plt.barh(y_pos, rates, align='center', color=colors, alpha=0.7)
-            
-            # Add rejection percentages as text labels
-            for i, bar in enumerate(bars):
+            bars = plt.barh(y_pos, rates, align="center", color=colors, alpha=0.7)
+
+            for bar in bars:
                 width = bar.get_width()
-                if width > 0:
-                    plt.text(max(5, min(width + 2, 95)), 
-                            bar.get_y() + bar.get_height()/2,
-                            f"{width:.1f}%", 
-                            va='center',
-                            fontsize=9)
-            
-            # Add 50% threshold line
-            plt.axvline(x=50, color='red', linestyle='--', alpha=0.7, 
-                    label='50% threshold (potentially problematic channels)')
-            
-            # Add shaded region for potentially problematic area
-            plt.axvspan(50, 100, alpha=0.1, color='red')
-            
-            # Set labels and title
+                if width <= 0:
+                    continue
+                plt.text(
+                    max(5, min(width + 2, 95)),
+                    bar.get_y() + bar.get_height() / 2,
+                    f"{width:.1f}%",
+                    va="center",
+                    fontsize=9,
+                )
+
+            plt.axvline(x=50, color="red", linestyle="--", alpha=0.7, label="50% threshold (potential issues)")
+            plt.axvspan(50, 100, alpha=0.1, color="red")
+
             plt.yticks(y_pos, channels)
-            plt.xlabel('Rejection Rate (%)')
-            plt.title('Channel-wise Rejection Rates')
+            plt.xlabel("Rejection Rate (%)")
+            plt.title("Channel-wise Rejection Rates")
             plt.xlim(0, 100)
-            
-            # Add a text box with potentially problematic channels
-            problematic_chs = [ch for ch, rate in sorted_channels if rate >= 50]
-            if problematic_chs:
-                problematic_text = "Potentially problematic channels:\n" + "\n".join(problematic_chs)
-                plt.text(55, 5, problematic_text, fontsize=10, 
-                        bbox=dict(facecolor='white', alpha=0.8, boxstyle='round,pad=0.5'))
-            
+
+            problematic = [ch for ch, rate in sorted_channels if rate >= 50]
+            if problematic:
+                plt.text(
+                    55,
+                    5,
+                    "Potentially problematic channels:\n" + "\n".join(problematic),
+                    fontsize=10,
+                    bbox=dict(facecolor="white", alpha=0.8, boxstyle="round,pad=0.5"),
+                )
+
             plt.tight_layout()
-            
-            # Show interactively if requested
+
             if interactive:
                 plt.show()
-            
-            # Save the plot
-            sub_id = getattr(self.params, "subject_id", "unknown")
-            ses_id = getattr(self.params, "session_id", "unknown")
-            run_id = getattr(self.params, "run_id", "01")
-            
+
+            sub_id = self.params.get("subject_id", "unknown")
+            ses_id = self.params.get("session_id", "unknown")
+            run_id = self.params.get("run_id", "01")
+
+            result_key = self.params.get("result_key", "autoreject")
             if plot_dir is None:
-                plot_dir = f"./data/processed/sub-{sub_id}/ses-{ses_id}/figures/autoreject"
+                paths_obj = self.params.get("paths")
+                task_id = self.params.get("task_id")
+                if paths_obj:
+                    base_dir = Path(
+                        paths_obj.get_report_path("autoreject", sub_id, ses_id, task_id, run_id)
+                    )
+                    plot_dir = str(base_dir / result_key)
+                else:
+                    plot_dir = f"./data/processed/sub-{sub_id}/ses-{ses_id}/figures/autoreject"
+                    if task_id:
+                        plot_dir = os.path.join(plot_dir, f"task-{task_id}")
+                    if run_id:
+                        plot_dir = os.path.join(plot_dir, f"run-{run_id}")
+                    plot_dir = os.path.join(plot_dir, result_key)
             os.makedirs(plot_dir, exist_ok=True)
-            
-            plt.savefig(os.path.join(plot_dir, f"autoreject_{sub_id}_{ses_id}_run-{run_id}_channel_rejection_rates.png"), dpi=150)
-            
-            # Only close the plot if not in interactive mode
+
+            plt.savefig(
+                os.path.join(
+                    plot_dir,
+                    f"{result_key}_autoreject_{sub_id}_{ses_id}_run-{run_id}_channel_rejection_rates.png",
+                ),
+                dpi=150,
+            )
+
             if not interactive:
                 plt.close()
-            
+
             logging.info(f"[AutoRejectStep] Saved channel rejection rates visualization to {plot_dir}")
-            
-        except Exception as e:
-            logging.warning(f"[AutoRejectStep] Error creating channel rejection rates visualization: {e}")
+
+        except Exception as exc:
+            logging.warning(f"[AutoRejectStep] Error creating channel rejection rates visualization: {exc}")
             import traceback
             logging.warning(traceback.format_exc())
             if 'plt' in locals() and plt.get_fignums():
-                plt.close()  # Close any open figures
+                plt.close()
     def _save_cleaned_data(self, data, file_prefix, output_dir):
         """Save cleaned data to disk."""
         try:
@@ -612,8 +595,8 @@ class AutoRejectStep(BaseStep):
             
             # Determine the save path
             if output_dir is None:
-                if hasattr(self.params, "paths") and self.params.get("paths") is not None:
-                    paths = self.params.get("paths")
+                paths = self.params.get("paths")
+                if paths is not None:
                     if hasattr(paths, "get_checkpoint_path"):
                         # Use standard path from ProjectPaths
                         path = os.path.normpath(str(paths.get_checkpoint_path(
@@ -702,33 +685,61 @@ class AutoRejectStep(BaseStep):
                 logging.error(f"[AutoRejectStep] Error saving to alternative path: {alt_e}")
                 logging.error("[AutoRejectStep] Unable to save cleaned data")
 
-    def _store_reject_log_in_info(self, data, reject_log, epochs, ar):
+    def _store_reject_log_in_info(self, data, reject_log, epochs, ar, result_key):
         """
         Store the reject_log and other AutoReject information in data.info["temp"]
         """
         try:
             # Convert reject_log to a serializable format
             # We can't directly store the RejectLog object as it's not JSON serializable
+            epochs_ch_names = list(getattr(epochs, "ch_names", []))
+            eeg_names = []
+            if hasattr(epochs, "info"):
+                eeg_picks = mne.pick_types(epochs.info, eeg=True, eog=False, ecg=False, stim=False, misc=False, exclude=[])
+                if eeg_picks is not None and len(eeg_picks) > 0:
+                    eeg_names = [epochs_ch_names[idx] for idx in eeg_picks]
+
+            if not eeg_names and hasattr(reject_log, "ch_names") and reject_log.ch_names is not None:
+                eeg_names = [str(ch) for ch in reject_log.ch_names]
+
             reject_log_dict = {
                 "bad_epochs": reject_log.bad_epochs.tolist(),
-                "ch_names": epochs.ch_names,
+                "ch_names": eeg_names,
                 "n_interpolate": ar.n_interpolate_ if hasattr(ar, "n_interpolate_") else None,
                 "consensus": ar.consensus_ if hasattr(ar, "consensus_") else None,
                 "thresholds": ar.threshes_ if hasattr(ar, "threshes_") else None,
                 "n_epochs_total": len(epochs),
-                "n_epochs_bad": np.sum(reject_log.bad_epochs)
+                "n_epochs_bad": np.sum(reject_log.bad_epochs),
+                "ch_names": list(getattr(epochs, "ch_names", [])) or getattr(reject_log, "ch_names", []),
+                "mode": self.params.get("mode", "fit_transform"),
+                "epoch_duration": self.params.get("epoch_duration"),
+                "epoch_overlap": self.params.get("epoch_overlap"),
+                "ar_params": self.params.get("ar_params", {}),
             }
             
             # Initialize temp if it doesn't exist
-            if 'temp' not in data.info:
-                data.info["temp"] = {}
-                
-            # Store the reject_log information
-            data.info["temp"]["autoreject"] = reject_log_dict
-            
+            temp = data.info.setdefault("temp", {})
+
+            # Add metadata about which pass generated the log
+            reject_log_dict["result_key"] = result_key
+
+            # Store historical results keyed by label
+            results = temp.setdefault("autoreject_results", {})
+            results[result_key] = reject_log_dict
+
+            # Maintain backwards-compatible single-entry shortcuts
+            temp["autoreject"] = reject_log_dict
+
             # Also store the indices directly for easier access
             bad_indices = np.where(reject_log.bad_epochs)[0].tolist()
-            data.info["temp"]["autoreject_bad_epochs"] = bad_indices
+            temp["autoreject_bad_epochs"] = bad_indices
+
+            indices_by_key = temp.setdefault("autoreject_bad_epochs_by_key", {})
+            indices_by_key[result_key] = bad_indices
+
+            # Maintain backward-compatible single log entry for downstream tools
+            temp.setdefault("autoreject_logs", {})[result_key] = reject_log_dict
+            temp["autoreject_log"] = reject_log_dict
             
             logging.info(f"[AutoRejectStep] Stored AutoReject information in data.info['temp']")
             logging.info(f"[AutoRejectStep] Bad epochs: {len(bad_indices)} out of {len(reject_log.bad_epochs)}")
@@ -768,9 +779,24 @@ class AutoRejectStep(BaseStep):
             ses_id = self.params.get("session_id", "001")
             
             if output_dir is None:
-                output_dir = f"./data/processed/sub-{sub_id}/ses-{ses_id}/models"
+                paths_obj = self.params.get("paths")
+                task_id = self.params.get("task_id")
+                run_id = self.params.get("run_id")
+                if paths_obj:
+                    base_dir = Path(
+                        paths_obj.get_report_path("autoreject", sub_id, ses_id, task_id, run_id)
+                    )
+                    output_dir = base_dir / "models"
+                else:
+                    output_dir = Path(f"./data/processed/sub-{sub_id}/ses-{ses_id}/models")
+                    if task_id:
+                        output_dir = output_dir / f"task-{task_id}"
+                    if run_id:
+                        output_dir = output_dir / f"run-{run_id}"
+            else:
+                output_dir = Path(output_dir)
                 
-            os.makedirs(output_dir, exist_ok=True)
+            output_dir.mkdir(parents=True, exist_ok=True)
             
             # Set up filename
             if model_filename is None:
@@ -778,9 +804,9 @@ class AutoRejectStep(BaseStep):
             
             # If h5io is available and filename is .h5, try to use it
             if h5io_available and model_filename.endswith('.h5'):
-                file_path = os.path.join(output_dir, model_filename)
+                file_path = output_dir / model_filename
                 try:
-                    write_hdf5(file_path, ar.__getstate__(), title='autoreject', overwrite=True)
+                    write_hdf5(str(file_path), ar.__getstate__(), title='autoreject', overwrite=True)
                     logging.info(f"[AutoRejectStep] Saved AutoReject model state to {file_path}")
                     return
                 except Exception as e:
@@ -791,7 +817,7 @@ class AutoRejectStep(BaseStep):
             if model_filename.endswith('.h5'):
                 model_filename = model_filename.replace('.h5', '.pkl')
                 
-            pickle_path = os.path.join(output_dir, model_filename)
+            pickle_path = output_dir / model_filename
             with open(pickle_path, 'wb') as f:
                 pickle.dump(ar, f)
             logging.info(f"[AutoRejectStep] Saved AutoReject model to {pickle_path} using pickle")

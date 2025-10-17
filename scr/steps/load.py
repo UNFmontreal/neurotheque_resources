@@ -1,6 +1,7 @@
 import logging
 import os
 from pathlib import Path
+from typing import Optional
 
 import mne
 
@@ -35,7 +36,7 @@ class LoadData(BaseStep):
         paths = self.params.get("paths")
 
         input_file = self.params.get("input_file")
-        resolved_path: Path | None = None
+        resolved_path: Optional[Path] = None
 
         if input_file:
             if sub_id or ses_id or task_id or run_id:
@@ -68,6 +69,14 @@ class LoadData(BaseStep):
                 raise ValueError(
                     f"[LoadData] Failed to read EDF at {resolved_path}. "
                     f"Hint: verify stim_channel (e.g., 'Trigger') and channel list via raw.ch_names"
+                ) from e
+        elif ext == ".vhdr":
+            try:
+                raw = mne.io.read_raw_brainvision(resolved_path, preload=True)
+            except Exception as e:
+                raise ValueError(
+                    f"[LoadData] Failed to read BrainVision header at {resolved_path}. "
+                    "Ensure companion .eeg/.vmrk files exist and the path points to the .vhdr file."
                 ) from e
         elif ext == ".fif" or (ext == ".gz" and str(resolved_path).lower().endswith(".fif.gz")):
             raw = mne.io.read_raw_fif(resolved_path, preload=True)

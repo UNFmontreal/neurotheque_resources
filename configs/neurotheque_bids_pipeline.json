@@ -1,0 +1,176 @@
+{
+  "auto_save": true,
+  "pipeline_label": "neurotheque-preproc",
+  "default_subject": "01",
+  "default_session": "001",
+  "default_run": "01",
+  "directory": {
+    "root": ".",
+    "raw_data_dir": "data/5pt/bids",
+    "processed_dir": "data/5pt/bids/derivatives/neurotheque-preproc",
+    "derivatives_dir": "data/5pt/bids/derivatives/neurotheque-preproc",
+    "reports_dir": "data/5pt/bids/derivatives/neurotheque-preproc/reports"
+  },
+  "bids_filters": {
+    "subjects": [
+      "01",
+      "02",
+      "03",
+      "04",
+      "05",
+      "06",
+      "07",
+      "08",
+      "10",
+      "11",
+      "13",
+      "14"
+    ],
+    "sessions": ["001"],
+    "runs": ["01"],
+    "tasks": ["textsemantic"]
+  },
+  "pipeline_mode": "standard",
+  "pipeline": {
+    "steps": [
+      {
+        "name": "LoadData",
+        "params": {
+          "input_file": null,
+          "stim_channel": "Trigger"
+        }
+      },
+      {
+        "name": "PrepChannelsStep",
+        "params": {
+          "on_missing": "ignore",
+          "reference": {
+            "method": "average",
+            "projection": true
+          }
+        }
+      },
+      {
+        "name": "FilterStep",
+        "params": {
+          "l_freq": 1.0,
+          "h_freq": 40.0,
+          "notch_freqs": [
+            60
+          ],
+          "fir_design": "firwin"
+        }
+      },
+      {
+        "name": "AutoRejectStep",
+        "params": {
+          "mode": "fit",
+          "result_key": "pass1",
+          "epoch_duration": 2.0,
+          "epoch_overlap": 0.0,
+          "plot_results": true,
+          "store_reject_log": true,
+          "save_model": false,
+          "file_prefix": "ar_initial",
+          "interactive": false,
+          "ar_params": {
+            "picks": "eeg",
+            "n_interpolate": [
+              1,
+              2,
+              3,
+              4
+            ],
+            "consensus": null,
+            "cv": 10,
+            "thresh_method": "bayesian_optimization"
+          }
+        }
+      },
+      {
+        "name": "ICAExtractionStep",
+        "params": {
+          "n_components": "all",
+          "method": "picard",
+          "random_state": 97,
+          "max_iter": 2000,
+          "decim": 1,
+          "plot_components": true,
+          "plot_sources": true,
+          "plot_properties": true,
+          "plot_psd": true,
+          "interactive": false,
+          "save_data": false,
+          "fit_params": {
+            "ortho": false,
+            "extended": true
+          }
+        }
+      },
+      {
+        "name": "ICALabelingStep",
+        "params": {
+          "methods": [
+            "iclabel"
+          ],
+          "thresholds": {
+            "iclabel": {
+              "eye": 0.7,
+              "heart": 0.6,
+              "muscle": 0.6,
+              "line_noise": 0.6,
+              "channel_noise": 0.6,
+              "other": 1.0
+            }
+          },
+          "auto_exclude": true,
+          "reconstruct": true,
+          "manual_selection": false,
+          "plot_labeled": true,
+          "plot_before_after": true,
+          "interactive": false
+        }
+      },
+      {
+        "name": "AutoRejectStep",
+        "params": {
+          "mode": "fit",
+          "result_key": "pass2",
+          "epoch_duration": 2.0,
+          "epoch_overlap": 0.0,
+          "plot_results": true,
+          "store_reject_log": true,
+          "save_model": false,
+          "file_prefix": "ar_final",
+          "interactive": false,
+          "ar_params": {
+            "picks": "eeg",
+            "n_interpolate": [
+              1,
+              2,
+              3,
+              4
+            ],
+            "consensus": null,
+            "cv": 10,
+            "thresh_method": "bayesian_optimization"
+          }
+        }
+      },
+      {
+        "name": "NeurothequeQCReportStep",
+        "params": {
+          "include_sections": [
+            "autoreject",
+            "ica"
+          ],
+          "max_images_per_section": 24
+        }
+      },
+      {
+        "name": "SaveData",
+        "params": {}
+      }
+    ]
+  }
+}
